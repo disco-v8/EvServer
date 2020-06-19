@@ -1,0 +1,37 @@
+
+0. コンパイル・インストール方法
+
+	$ git clone https://github.com/disco-v8/EvServer.git
+	$ cd EvServer
+
+	$ autoheader
+	$ aclocal
+	$ automake --add-missing --copy
+	$ autoconf
+
+	$ make clean
+	$ ./configure --prefix=/usr
+	$ make
+
+1. 使い方
+
+使い方はいたって簡単です。
+
+    $ ./evserver [/PATH/TO/evserver.ini]
+
+としてください。
+
+設定ファイルを指定しないと、UNIXドメインソケットによる待ち受けしかしません。
+
+2. 接続方法
+
+1の場合、EvServerに接続するには
+
+    $ nc -U /tmp/.EvServer.sock
+
+としてください。"nc"はNcatコマンドです。(https://nmap.org/ncat)
+
+3. 謝辞
+
+libev, OpenSSL, Ncat, VSCode :-)
+	...and everyone!

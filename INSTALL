@@ -1,0 +1,33 @@
+
+0. Quick instal
+
+	$ git clone https://github.com/disco-v8/EvServer.git
+	$ cd EvServer
+
+	$ autoheader
+	$ aclocal
+	$ automake --add-missing --copy
+	$ autoconf
+
+	$ make clean
+	$ ./configure --prefix=/usr
+	$ make
+
+1. Usage:
+
+    $ ./evserver [/PATH/TO/evserver.ini]
+
+If you don't specify a "evserver.ini", it will only listen on UNIX domain sockets.
+
+2. How to connect to EvServer
+
+In case of Unix domain socket
+
+	$ nc -U /tmp/.EvServer.sock
+
+"nc" is Ncat. (https://nmap.org/ncat) 
+
+3. Thanks
+
+libev, OpenSSL, Ncat, VSCode :-)
+	...and everyone!
