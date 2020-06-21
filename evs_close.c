@@ -105,11 +105,14 @@ int CLOSE_all(void)
         printf("INFO  : %s(): close(fd=%d): OK.\n", __func__, client_watcher->socket_fd);
     }
     // クライアント用テールキューをすべて削除
-    while (EVS_client_tailq.tqh_first != NULL)
+    while (!TAILQ_EMPTY(&EVS_client_tailq))
     {
-        TAILQ_REMOVE(&EVS_client_tailq, EVS_client_tailq.tqh_first, entries);
+        client_watcher = TAILQ_FIRST(&EVS_client_tailq);
+        TAILQ_REMOVE(&EVS_client_tailq, client_watcher, entries);
+        free(client_watcher);
     }
     printf("INFO  : %s(): TAILQ_REMOVE(EVS_client_tailq): OK.\n", __func__);
+
 
     // --------------------------------
     // サーバー別クローズ処理
@@ -143,9 +146,11 @@ int CLOSE_all(void)
         printf("INFO  : %s(): close(fd=%d): OK.\n", __func__, server_watcher->socket_fd);
     }
     // サーバー用テールキューをすべて削除
-    while (EVS_server_tailq.tqh_first != NULL)
+    while (!TAILQ_EMPTY(&EVS_server_tailq))
     {
-        TAILQ_REMOVE(&EVS_server_tailq, EVS_server_tailq.tqh_first, entries);
+        server_watcher = TAILQ_FIRST(&EVS_server_tailq);
+        TAILQ_REMOVE(&EVS_server_tailq, server_watcher, entries);
+        free(server_watcher);
     }
     printf("INFO  : %s(): TAILQ_REMOVE(EVS_server_tailq): OK.\n", __func__);
 
@@ -153,9 +158,11 @@ int CLOSE_all(void)
     // ポート別クローズ処理
     // --------------------------------
     // ポート用テールキューをすべて削除
-    while (EVS_port_tailq.tqh_first != NULL)
+    while (!TAILQ_EMPTY(&EVS_port_tailq))
     {
-        TAILQ_REMOVE(&EVS_port_tailq, EVS_port_tailq.tqh_first, entries);
+        listen_port = TAILQ_FIRST(&EVS_port_tailq);
+        TAILQ_REMOVE(&EVS_port_tailq, listen_port, entries);
+        free(listen_port);
     }
     printf("INFO  : %s(): TAILQ_REMOVE(EVS_port_tailq): OK.\n", __func__);
 
