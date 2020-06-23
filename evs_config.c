@@ -41,7 +41,7 @@ char *config_str_cleaner(char *target, int target_len)
     char                            *dest_pos;                          // 大文字変換後の文字列のポインタ
 
     // 大文字変換用文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-    dest_pos = (char *)calloc(target_len + 1, sizeof(char));
+    dest_pos = (char *)calloc(1, target_len + 1);
     // メモリ領域が確保できなかったら
     if (dest_pos == NULL)
     {
@@ -96,7 +96,7 @@ char *config_str_cleaner(char *target, int target_len)
 // --------------------------------
 int config_str_convert(char *target, int target_len)
 {
-    int                             init_result;
+    int                             init_result = 0;                    // 設定用文字列変換結果、初期値=0(正常終了)
     char                            *changed_str;                       // 整理後の文字列ポインタ
     char                            *key_str;                           // 設定値名文字列ポインタ
     char                            *value_str;                         // 設定値文字列ポインタ
@@ -104,7 +104,7 @@ int config_str_convert(char *target, int target_len)
     struct EVS_port_t               *listen_port;                       // ポート別設定用構造体ポインタ
 
     // 設定値名文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-    key_str = (char *)calloc(target_len + 1, sizeof(char));
+    key_str = (char *)calloc(1, target_len + 1);
     // メモリ領域が確保できなかったら
     if (key_str == NULL)
     {
@@ -113,11 +113,13 @@ int config_str_convert(char *target, int target_len)
     }
 
     // 設定値文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-    value_str = (char *)calloc(target_len + 1, sizeof(char));
+    value_str = (char *)calloc(1, target_len + 1);
     // メモリ領域が確保できなかったら
     if (value_str == NULL)
     {
         printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+        // 設定値名のメモリ領域は不要になったので破棄
+        free(key_str);
         return -1;
     }
 
@@ -127,16 +129,26 @@ int config_str_convert(char *target, int target_len)
     if (changed_str == NULL)
     {
         printf("ERROR : %s(): Cannot clearning string!?\n", __func__);
+        // 設定値名のメモリ領域は不要になったので破棄
+        free(key_str);
+        // 設定値のメモリ領域は不要になったので破棄
+        free(value_str);
         return -1;
     }
     printf("INFO  : %s(): OK %s\n", __func__, changed_str); 
 
     // 整理出来たら、設定値名と設定値に変換、その1
     init_result = sscanf(changed_str, "%[^=]=%s", key_str, value_str);
+    // 変換後の文字列のメモリ領域は不要になったので破棄
+    free(changed_str);
     // 変換数が2ではないなら
     if (init_result != 2)
     {
         printf("ERROR : %s(): Cannot get key_str and value_str!? %d %s\n", __func__, init_result, key_str);
+        // 設定値名のメモリ領域は不要になったので破棄
+        free(key_str);
+        // 設定値のメモリ領域は不要になったので破棄
+        free(value_str);
         return -1;
     }
 
@@ -168,11 +180,15 @@ int config_str_convert(char *target, int target_len)
     else if (strcmp("SOCKETFILE", key_str) == 0)
     {
         // 設定値文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-        EVS_config.domain_socketfile = (char *)calloc(strlen(value_str) + 1, sizeof(char));
+        EVS_config.domain_socketfile = (char *)realloc((void *)EVS_config.domain_socketfile, strlen(value_str) + 1);
         // メモリ領域が確保できなかったら
         if (EVS_config.domain_socketfile == NULL)
         {
-            printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            printf("ERROR : %s(): Cannot realloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            // 設定値名のメモリ領域は不要になったので破棄
+            free(key_str);
+            // 設定値のメモリ領域は不要になったので破棄
+            free(value_str);
             return -1;
         }
         // UNIXドメインソケットファイルを設定
@@ -204,11 +220,15 @@ int config_str_convert(char *target, int target_len)
     else if (strcmp("CA_FILE", key_str) == 0)
     {
         // 設定値文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-        EVS_config.ssl_ca_file = (char *)calloc(strlen(value_str) + 1, sizeof(char));
+        EVS_config.ssl_ca_file = (char *)calloc(1, strlen(value_str) + 1);
         // メモリ領域が確保できなかったら
         if (EVS_config.ssl_ca_file == NULL)
         {
             printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            // 設定値名のメモリ領域は不要になったので破棄
+            free(key_str);
+            // 設定値のメモリ領域は不要になったので破棄
+            free(value_str);
             return -1;
         }
         memcpy((void *)EVS_config.ssl_ca_file, (void *)value_str, strlen(value_str));
@@ -220,11 +240,15 @@ int config_str_convert(char *target, int target_len)
     else if (strcmp("CERT_FILE", key_str) == 0)
     {
         // 設定値文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-        EVS_config.ssl_cert_file = (char *)calloc(strlen(value_str) + 1, sizeof(char));
+        EVS_config.ssl_cert_file = (char *)calloc(1, strlen(value_str) + 1);
         // メモリ領域が確保できなかったら
         if (EVS_config.ssl_cert_file == NULL)
         {
             printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            // 設定値名のメモリ領域は不要になったので破棄
+            free(key_str);
+            // 設定値のメモリ領域は不要になったので破棄
+            free(value_str);
             return -1;
         }
         memcpy((void *)EVS_config.ssl_cert_file, (void *)value_str, strlen(value_str));
@@ -236,11 +260,15 @@ int config_str_convert(char *target, int target_len)
     else if (strcmp("KEY_FILE", key_str) == 0)
     {
         // 設定値文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-        EVS_config.ssl_key_file = (char *)calloc(strlen(value_str) + 1, sizeof(char));
+        EVS_config.ssl_key_file = (char *)calloc(1, strlen(value_str) + 1);
         // メモリ領域が確保できなかったら
         if (EVS_config.ssl_key_file == NULL)
         {
             printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            // 設定値名のメモリ領域は不要になったので破棄
+            free(key_str);
+            // 設定値のメモリ領域は不要になったので破棄
+            free(value_str);
             return -1;
         }
         memcpy((void *)EVS_config.ssl_key_file, (void *)value_str, strlen(value_str));
@@ -340,6 +368,10 @@ int config_str_convert(char *target, int target_len)
         if (listen_port == NULL)
         {
             printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            // 設定値名のメモリ領域は不要になったので破棄
+            free(key_str);
+            // 設定値のメモリ領域は不要になったので破棄
+            free(value_str);
             return -1;
         }
         // 設定値を個別に変換、その2
@@ -348,6 +380,10 @@ int config_str_convert(char *target, int target_len)
         if (init_result != 3)
         {
             printf("ERROR : %s(): sscanf(): Cannot get value[]!? %d %s\n", __func__, init_result, value_str);
+            // 設定値名のメモリ領域は不要になったので破棄
+            free(key_str);
+            // 設定値のメモリ領域は不要になったので破棄
+            free(value_str);
             return -1;
         }
         // 設定値1が数値変換できて、かつ1～65535なら
@@ -359,6 +395,10 @@ int config_str_convert(char *target, int target_len)
         else
         {
             printf("ERROR : %s(): Cannot read LISTEN PORT=%s!?\n", __func__, value[0]);
+            // 設定値名のメモリ領域は不要になったので破棄
+            free(key_str);
+            // 設定値のメモリ領域は不要になったので破棄
+            free(value_str);
             return -1;
         }
         // 設定値2の中に'4'があれば
@@ -401,8 +441,16 @@ int config_str_convert(char *target, int target_len)
     else
     {
         printf("ERROR : %s(): Not support parameter!? '%s'\n", __func__, target);
+        // 設定値名のメモリ領域は不要になったので破棄
+        free(key_str);
+        // 設定値のメモリ領域は不要になったので破棄
+        free(value_str);
         return -1;
     }
+    // 設定値名のメモリ領域は不要になったので破棄
+    free(key_str);
+    // 設定値のメモリ領域は不要になったので破棄
+    free(value_str);
     return 0;
 }
 
@@ -424,7 +472,7 @@ int INIT_config_default(void)
     // ----------------
     char                            *domain_socketfile = "/tmp/.EvServer.sock";
     // 設定値文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
-    EVS_config.domain_socketfile = (char *)calloc(strlen(domain_socketfile) + 1, sizeof(char));
+    EVS_config.domain_socketfile = (char *)calloc(1, strlen(domain_socketfile) + 1);
     // メモリ領域が確保できなかったら
     if (EVS_config.domain_socketfile == NULL)
     {
