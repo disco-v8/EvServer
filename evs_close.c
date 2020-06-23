@@ -84,6 +84,7 @@ int CLOSE_all(void)
     int                             close_result;
     struct EVS_ev_client_t          *client_watcher;                    // クライアント別設定用構造体ポインタ
     struct EVS_ev_server_t          *server_watcher;                    // サーバー別設定用構造体ポインタ
+    struct EVS_timer_t              *timeout_watcher;                   // タイマー別構造体ポインタ
     struct EVS_port_t               *listen_port;                       // ポート別設定用構造体ポインタ
 
     // --------------------------------
@@ -167,14 +168,36 @@ int CLOSE_all(void)
     printf("INFO  : %s(): TAILQ_REMOVE(EVS_port_tailq): OK.\n", __func__);
 
     // --------------------------------
-    // libev関連終了処理
+    // libev関連終了処理 ※タイマー用に確保したメモリ領域のfree()を忘れずに
     // --------------------------------
-    // タイマー用に確保したメモリのfree()を忘れずに
+    // タイマー用テールキューをすべて削除
+    while (!TAILQ_EMPTY(&EVS_timer_tailq))
+    {
+        timeout_watcher = TAILQ_FIRST(&EVS_timer_tailq);
+        TAILQ_REMOVE(&EVS_timer_tailq, timeout_watcher, entries);
+        free(timeout_watcher);
+    }
+    printf("INFO  : %s(): TAILQ_REMOVE(EVS_timer_tailq): OK.\n", __func__);
 
     // --------------------------------
-    // 各種設定関連終了処理
+    // 各種設定関連終了処理 ※設定用に確保した文字列のメモリ領域のfree()を忘れずに
     // --------------------------------
-    // 設定用に確保した文字列のfree()を忘れずに
+    if (EVS_config.domain_socketfile != NULL)
+    {
+        free(EVS_config.domain_socketfile);
+    }
+    if (EVS_config.ssl_ca_file != NULL)
+    {
+        free(EVS_config.ssl_ca_file);
+    }
+    if (EVS_config.ssl_cert_file != NULL)
+    {
+        free(EVS_config.ssl_cert_file);
+    }
+    if (EVS_config.ssl_key_file != NULL)
+    {
+        free(EVS_config.ssl_key_file);
+    }
 
     // 戻る
     return close_result;
