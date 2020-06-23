@@ -14,6 +14,7 @@
 //     0.0.8  OpenSSL's BIO support (Discarded version!)
 //     0.0.9  Change to Non-Blocking FD
 //     0.0.10 No-communication timer
+//     0.0.11 Bug fix free() and ?alloc() parameter.
 //     0.x.x  Daemon mode support. (TBD)
 //     0.x.x  Added API for upper module. (TBD)
 //     0.x.x  Added PostgreSQL module. (TBD)
