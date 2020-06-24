@@ -25,12 +25,14 @@
 #include <stdlib.h>                                         // 標準処理関連
 #include <string.h>                                         // 文字列関連
 #include <ctype.h>                                          // 文字関連
+#include <fcntl.h>                                          // ファイル関連
 
 #include <sys/queue.h>                                      // リスト・テール(tail)キュー・循環キュー関連
 #include <sys/types.h>                                      // データタイプ(型)関連
 #include <sys/socket.h>                                     // ソケット関連
 #include <sys/ioctl.h>                                      // I/O関連
 #include <sys/un.h>                                         // UNIXドメインソケット関連
+#include <sys/stat.h>                                       // ステータス関連
 
 #include <netinet/in.h>                                     // IPv4関連
 #include <netinet/tcp.h>                                    // TCP関連
@@ -47,15 +49,27 @@
 // 定数宣言
 // --------------------------------
 #define MAX_STRING_LENGTH   8192                            // 設定ファイル中とかの、一行当たりの最大文字数
+#define MAX_LOG_LENGTH      1024                            // ログの、一行当たりの最大文字数
 #define MAX_MESSAGE_LENGTH  8192                            // ソケット通信時の、一メッセージ当たりの最大文字数
 
 #define MAX_PF_NUM          16                              // 対応するプロトコルファミリーの最大数(PF_KEYまで…実際にはPF_UNIX、PF_INET、PF_INET6しか扱わない)
+
+
+enum                        loglevel {                      // ログレベル
+                                LOGLEVEL_DEBUG,
+                                LOGLEVEL_INFO,
+                                LOGLEVEL_WARN,
+                                LOGLEVEL_ERROR,
+};
 
 // --------------------------------
 // 型宣言
 // --------------------------------
 struct EVS_config_t {                                       // 各種設定用構造体
     int     daemon;                                         // デーモン化(0:フロントプロセス、1:デーモン化)
+
+    char    *pid_file;                                      // PIDファイル名のフルパス
+    char    *log_file;                                      // ログファイル名のフルパス
 
     char    *domain_socketfile;                             // UNIXドメインソケットファイル名のフルパス
 
@@ -145,11 +159,14 @@ extern const char                       *pf_name_list[];                // プ�
 // ----------------
 // SSL/TLS関連
 // ----------------
-extern  SSL_CTX                         *EVS_ctx;                       // SSL設定情報
+extern SSL_CTX                          *EVS_ctx;                       // SSL設定情報
 
 // ----------------
 // その他の変数
 // ----------------
+extern const char                       *loglevel_list[];               // ログレベル文字列テーブル
+
+extern int                              EVS_log_fd;                     // ログファイルディスクリプタ
 
 // ----------------------------------------------------------------------
 // コード部分
@@ -157,6 +174,7 @@ extern  SSL_CTX                         *EVS_ctx;                       // SSL�
 // --------------------------------
 // プロトタイプ宣言
 // --------------------------------
+extern void logging(int, char *);                                       // ログ出力処理
 extern int INIT_all(int, char *[]);                                     // 初期化処理
 extern void CLOSE_client(struct ev_loop*, struct ev_io *, int);         // クライアント接続終了処理
 extern int CLOSE_all(void);                                             // 終了処理
