@@ -36,11 +36,11 @@ When dependencies are installed just run:
     $ automake --add-missing --copy
     $ autoconf
 
-    2) Make PID, SockFile, Log's directorys.
-
     $ make clean
     $ ./configure --prefix=/usr
     $ make
+
+    2) Make PID, SockFile, Log's directorys.
 
     $ mkdir /var/run/EvServer/
     $ chown userid.groupid /var/run/EvServer/
@@ -48,7 +48,7 @@ When dependencies are installed just run:
     $ chown userid.groupid /var/log/EvServer/
 
     3) Edit INI file, and run.
-    
+
     $ ./evserver (./evserver.ini)
 
 Regards.
