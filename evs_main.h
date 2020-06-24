@@ -111,6 +111,7 @@ struct EVS_ev_server_t {                                    // コールバッ�
 
 struct EVS_ev_client_t {                                    // コールバック関数内でソケットのファイルディスクリプタも知りたいので拡張した構造体を宣言する、こちらはクライアント用
     ev_io   io_watcher;                                     // libevのev_io、これをev_io_init()＆ev_io_start()に渡す
+    void    *timeout_target;                                // クライアント接続を切断するときに、該当接続のタイマーオブジェクトが知りたいので構造体の構成の一つとする
     ev_tstamp   last_activity;                              // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)
     int     socket_fd;                                      // socket_fd、コールバック関数内でstruct ev_io*で渡される変数のポインタをEVS_ev_client_t*に型変換することで参照する
     int     ssl_status;                                     // SSL接続状態(0:非SSL/SSL接続前、1:SSLハンドシェイク前、2:SSL接続中)
@@ -126,7 +127,7 @@ struct EVS_ev_client_t {                                    // コールバッ�
 
 struct EVS_timer_t {                                        // タイマー別構造体
     ev_tstamp   timeout;                                    // タイムアウト秒(last_activityのtimeout秒後)
-    void        *target;                                    // タイムアウト対象となるオブジェクトのポインタ(ほとんどの場合、struct EVS_ev_client_t *かな？、そこのlast_activityを見る)
+    void        *client_target;                             // タイムアウト対象となるクライアント接続構造体のポインタ(そこのlast_activityを見る)
     TAILQ_ENTRY (EVS_timer_t) entries;                      // 次のTAILQ構造体への接続 → man3/queue.3.html
 };
 
@@ -186,4 +187,3 @@ TAILQ_HEAD(EVS_port_tailq_head, EVS_port_t)         EVS_port_tailq;     // ポ�
 TAILQ_HEAD(EVS_server_tailq_head, EVS_ev_server_t)  EVS_server_tailq;   // サーバー用TAILQ_HEAD構造体 → man3/queue.3.html
 TAILQ_HEAD(EVS_client_tailq_head, EVS_ev_client_t)  EVS_client_tailq;   // クライアント用TAILQ_HEAD構造体 → man3/queue.3.html
 TAILQ_HEAD(EVS_timer_tailq_head, EVS_timer_t)       EVS_timer_tailq;    // タイマー用TAILQ_HEAD構造体 → man3/queue.3.html
-
