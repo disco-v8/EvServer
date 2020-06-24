@@ -109,8 +109,8 @@ static void CB_timeout(struct ev_loop* loop, struct ev_timer *watcher, int reven
     // タイマー用テールキューに登録されているタイマーを確認
     TAILQ_FOREACH (this_timeout, &EVS_timer_tailq, entries)
     {
-        // タイマー用キューの対象オブジェクトポインタを、タイマー監視対象の拡張構造体ポインタに変換する
-        this_client = (struct EVS_ev_client_t *)this_timeout->target;
+        // タイマー用キューのクライアント接続構造体のポインタを変換する
+        this_client = (struct EVS_ev_client_t *)this_timeout->client_target;
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): last_activity=%f, timeout=%f, ev_now=%f\n", __func__, this_client->socket_fd, this_client->last_activity, this_timeout->timeout, ev_now(loop));
         logging(LOGLEVEL_INFO, log_str);
         // 該当タイマーの経過時間を算出する
