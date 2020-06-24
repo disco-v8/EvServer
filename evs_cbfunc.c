@@ -99,9 +99,9 @@ static void CB_sigterm(struct ev_loop* loop, struct ev_signal *watcher, int reve
 // ----------------
 static void CB_timeout(struct ev_loop* loop, struct ev_timer *watcher, int revents)
 {
-    struct EVS_timer_t          *this_timeout;
-    struct EVS_ev_client_t      *this_client;
-    ev_tstamp                   after_time;                             // タイマーの経過時間(最終アクティブ日時 - 現在日時 + タイムアウト)
+    struct EVS_timer_t              *this_timeout;
+    struct EVS_ev_client_t          *this_client;
+    ev_tstamp                       after_time;                         // タイマーの経過時間(最終アクティブ日時 - 現在日時 + タイムアウト)
     char                            log_str[MAX_LOG_LENGTH];
     
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timeout check start!\n", __func__);
@@ -411,9 +411,10 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
 
         // タイマー別構造体ポインタにクライアント別設定用構造体ポインタを設定
         timeout_watcher->timeout = EVS_config.nocommunication_timeout;      // タイムアウト秒(last_activityのtimeout秒後)を設定する
-        timeout_watcher->target = (void *)client_watcher;                   // クライアント別設定用構造体ポインタを設定する
+        timeout_watcher->client_target = (void *)client_watcher;            // クライアント別設定用構造体ポインタを設定する
         ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
         client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
+        client_watcher->timeout_target = (void *)timeout_watcher;           // クライアント接続を切断するときに、該当接続のタイマーオブジェクトを削除するために設定しておく
 
         // テールキューの最後にこの接続の情報を追加する
         TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
@@ -558,9 +559,10 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
 
         // タイマー別構造体ポインタにクライアント別設定用構造体ポインタを設定
         timeout_watcher->timeout = EVS_config.nocommunication_timeout;      // タイムアウト秒(last_activityのtimeout秒後)を設定する
-        timeout_watcher->target = (void *)client_watcher;                   // クライアント別設定用構造体ポインタを設定する
+        timeout_watcher->client_target = (void *)client_watcher;            // クライアント別設定用構造体ポインタを設定する
         ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
         client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
+        client_watcher->timeout_target = (void *)timeout_watcher;           // クライアント接続を切断するときに、該当接続のタイマーオブジェクトを削除するために設定しておく
 
         // テールキューの最後にこの接続の情報を追加する
         TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
@@ -659,9 +661,10 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
 
         // タイマー別構造体ポインタにクライアント別設定用構造体ポインタを設定
         timeout_watcher->timeout = EVS_config.nocommunication_timeout;      // タイムアウト秒(last_activityのtimeout秒後)を設定する
-        timeout_watcher->target = (void *)client_watcher;                   // クライアント別設定用構造体ポインタを設定する
+        timeout_watcher->client_target = (void *)client_watcher;            // クライアント別設定用構造体ポインタを設定する
         ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
         client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
+        client_watcher->timeout_target = (void *)timeout_watcher;           // クライアント接続を切断するときに、該当接続のタイマーオブジェクトを削除するために設定しておく
 
         // テールキューの最後にこの接続の情報を追加する
         TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
