@@ -36,14 +36,19 @@
 // --------------------------------
 static void CB_sighup(struct ev_loop* loop, struct ev_signal *watcher, int revents)
 {
+    char                            log_str[MAX_LOG_LENGTH];
+
     // イベントにエラーフラグが含まれていたら
     if (EV_ERROR & revents)
     {
-        printf("ERROR : %s(): Invalid event!?\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Invalid event!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
-    printf("INFO  : %s(): Catch SIGHUP!\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Catch SIGHUP!\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+
 ////    ev_break(loop, EVBREAK_CANCEL);                                            // わざわざこう書いてもいいけど、書かなくてもループは続けてくれる
 }
 
@@ -52,14 +57,19 @@ static void CB_sighup(struct ev_loop* loop, struct ev_signal *watcher, int reven
 // --------------------------------
 static void CB_sigint(struct ev_loop* loop, struct ev_signal *watcher, int revents)
 {
+    char                            log_str[MAX_LOG_LENGTH];
+
     // イベントにエラーフラグが含まれていたら
     if (EV_ERROR & revents)
     {
-        printf("ERROR : %s(): Invalid event!?\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Invalid event!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
-    printf("INFO  : %s(): Catch SIGINT!\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Catch SIGINT!\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+
     ev_break(loop, EVBREAK_ALL);
 }
 
@@ -68,14 +78,19 @@ static void CB_sigint(struct ev_loop* loop, struct ev_signal *watcher, int reven
 // --------------------------------
 static void CB_sigterm(struct ev_loop* loop, struct ev_signal *watcher, int revents)
 {
+    char                            log_str[MAX_LOG_LENGTH];
+
     // イベントにエラーフラグが含まれていたら
     if (EV_ERROR & revents)
     {
-        printf("ERROR : %s(): Invalid event!?\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Invalid event!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
-    printf("INFO  : %s(): Catch SIGTERM!\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Catch SIGTERM!\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+
     ev_break(loop, EVBREAK_ALL);
 }
 
@@ -87,23 +102,28 @@ static void CB_timeout(struct ev_loop* loop, struct ev_timer *watcher, int reven
     struct EVS_timer_t          *this_timeout;
     struct EVS_ev_client_t      *this_client;
     ev_tstamp                   after_time;                             // タイマーの経過時間(最終アクティブ日時 - 現在日時 + タイムアウト)
+    char                            log_str[MAX_LOG_LENGTH];
     
-    printf("INFO  : %s(): Timeout check start!\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timeout check start!\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
     // タイマー用テールキューに登録されているタイマーを確認
     TAILQ_FOREACH (this_timeout, &EVS_timer_tailq, entries)
     {
         // タイマー用キューの対象オブジェクトポインタを、タイマー監視対象の拡張構造体ポインタに変換する
         this_client = (struct EVS_ev_client_t *)this_timeout->target;
-        printf("INFO  : %s(fd=%d): last_activity=%f, timeout=%f, ev_now=%f\n", __func__, this_client->socket_fd, this_client->last_activity, this_timeout->timeout, ev_now(loop));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): last_activity=%f, timeout=%f, ev_now=%f\n", __func__, this_client->socket_fd, this_client->last_activity, this_timeout->timeout, ev_now(loop));
+        logging(LOGLEVEL_INFO, log_str);
         // 該当タイマーの経過時間を算出する
         after_time = this_client->last_activity - ev_now(loop) + this_timeout->timeout;
         // 該当タイマーがすでにタイムアウトしていたら
         if (after_time < 0)
         {
-            printf("INFO  : %s(fd=%d): Timeout!!!\n", __func__, this_client->socket_fd);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Timeout!!!\n", __func__, this_client->socket_fd);
+            logging(LOGLEVEL_WARN, log_str);
             // テールキューからこの接続の情報を削除する
             TAILQ_REMOVE(&EVS_timer_tailq, this_timeout, entries);
-            printf("INFO  : %s(fd=%d): TAILQ_REMOVE(EVS_timer_tailq): OK.\n", __func__, this_client->socket_fd);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): TAILQ_REMOVE(EVS_timer_tailq): OK.\n", __func__, this_client->socket_fd);
+            logging(LOGLEVEL_WARN, log_str);
             // ----------------
             // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
             // ----------------
@@ -111,7 +131,8 @@ static void CB_timeout(struct ev_loop* loop, struct ev_timer *watcher, int reven
         }
         else
         {
-            printf("INFO  : %s(fd=%d): Not Timeout!?\n", __func__, this_client->socket_fd);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Not Timeout!?\n", __func__, this_client->socket_fd);
+            logging(LOGLEVEL_INFO, log_str);
         }
     }
     // ----------------
@@ -131,17 +152,21 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
     struct EVS_ev_client_t          *other_client;                                      // ev_io＋ソケットファイルディスクリプタ＋次のTAILQ構造体への接続とした拡張構造体
     struct EVS_ev_client_t          *this_client = (struct EVS_ev_client_t *)watcher;   // libevから渡されたwatcherポインタを、本来の拡張構造体ポインタとして変換する
 
-    char msg_buf[MAX_MESSAGE_LENGTH];
-    ssize_t msg_len = 0;
+    char                            msg_buf[MAX_MESSAGE_LENGTH];
+    ssize_t                         msg_len = 0;
+
+    char                            log_str[MAX_LOG_LENGTH];
 
     // イベントにエラーフラグが含まれていたら
     if (EV_ERROR & revents)
     {
-        printf("ERROR : %s(): Invalid event!?\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Invalid event!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
-    printf("INFO  : %s(fd=%d): OK. ssl_status=%d\n", __func__, this_client->socket_fd, this_client->ssl_status);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): OK. ssl_status=%d\n", __func__, this_client->socket_fd, this_client->ssl_status);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // 無通信タイムアウトチェックをする(=1:有効)なら
@@ -164,7 +189,8 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // 読み込めたメッセージ量が負(<0)だったら(エラーです)
         if (socket_result < 0)
         {
-            printf("ERROR : %s(): Cannot recv message? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot recv message? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
     }
@@ -177,10 +203,12 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // OpenSSL(SSL_accept : SSL/TLSハンドシェイクを開始)
         // ----------------
         socket_result = SSL_accept(this_client->ssl);
-        printf("INFO  : %s(fd=%d): SSL_accept(): socket_result=%d.\n", __func__, this_client->socket_fd, socket_result);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_accept(): socket_result=%d.\n", __func__, this_client->socket_fd, socket_result);
+        logging(LOGLEVEL_INFO, log_str);
         // SSL/TLSハンドシェイクの結果コードを取得
         socket_result = SSL_get_error(this_client->ssl, socket_result);
-        printf("INFO  : %s(fd=%d): SSL_get_error(): socket_result=%d.\n", __func__, this_client->socket_fd, socket_result);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_get_error(): socket_result=%d.\n", __func__, this_client->socket_fd, socket_result);
+        logging(LOGLEVEL_INFO, log_str);
 
         // SSL/TLSハンドシェイクの結果コード別処理分岐
         switch (socket_result)
@@ -189,12 +217,14 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
                 // エラーなし(ハンドシェイク成功)
                 // SSL接続中に設定
                 this_client->ssl_status = 2;
-                printf("INFO  : %s(fd=%d): SSL/TLS handshake OK.\n", __func__, this_client->socket_fd);
+                snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL/TLS handshake OK.\n", __func__, this_client->socket_fd);
+                logging(LOGLEVEL_INFO, log_str);
                 break;
             case SSL_ERROR_SSL :
             case SSL_ERROR_SYSCALL :
                 // SSL/TLSハンドシェイクがエラー
-                printf("ERROR : %s(fd=%d): Cannot SSL/TLS handshake!? %s\n", __func__, this_client->socket_fd, ERR_reason_error_string(ERR_get_error()));
+                snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Cannot SSL/TLS handshake!? %s\n", __func__, this_client->socket_fd, ERR_reason_error_string(ERR_get_error()));
+                logging(LOGLEVEL_ERROR, log_str);
                 // ----------------
                 // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
                 // ----------------
@@ -223,7 +253,8 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // SSLデータ読み込みがエラーだったら
         if (socket_result < 0)
         {
-            printf("ERROR : %s(fd=%d): SL_read(): Cannot read decrypted message!?\n", __func__, this_client->socket_fd, ERR_reason_error_string(ERR_get_error()));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SL_read(): Cannot read decrypted message!?\n", __func__, this_client->socket_fd, ERR_reason_error_string(ERR_get_error()));
+            logging(LOGLEVEL_ERROR, log_str);
             // ----------------
             // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
             // ----------------
@@ -247,7 +278,8 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
     }
 
     // 受信したメッセージをとりあえず表示する
-    printf("INFO  : %s(fd=%d): message len=%d, %s", __func__, this_client->socket_fd, msg_len, msg_buf);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): message len=%d, %s", __func__, this_client->socket_fd, msg_len, msg_buf);
+    logging(LOGLEVEL_INFO, log_str);
 
 /*
     // 接続している他のクライアントに対して受信したメッセージを送信する
@@ -263,10 +295,12 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
             // 送信したバイト数が負(<0)だったら(エラーです)
             if (socket_result < 0)
             {
-                printf("ERROR : %s(fd=%d): send(fd=%d): Cannot send message? errno=%d (%s)\n", __func__, this_client->socket_fd, other_client->socket_fd, errno, strerror(errno));
+                snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(fd=%d): Cannot send message? errno=%d (%s)\n", __func__, this_client->socket_fd, other_client->socket_fd, errno, strerror(errno));
+                logging(LOGLEVEL_ERROR, log_str);
                 return;
             }
-////            printf("INFO  : %s(fd=%d): send(fd=%d): OK.\n", __func__, this_client->socket_fd, other_client->socket_fd);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(fd=%d): OK.\n", __func__, this_client->socket_fd, other_client->socket_fd);
+            logging(LOGLEVEL_INFO, log_str);
         }
     }
 */
@@ -285,6 +319,8 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     struct EVS_ev_client_t          *client_watcher;                                            // クライアント別設定用構造体ポインタ
     struct EVS_timer_t              *timeout_watcher;                                           // タイマー別構造体ポインタ
 
+    char                            log_str[MAX_LOG_LENGTH];
+
     // ----------------
     // ソケットアクセプト(accept : リッスンポートに接続があった)
     // ----------------
@@ -293,24 +329,28 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     if (socket_result < 0)
     {
         // ここでもソケットをクローズをしたほうがいいかな？それともソケットを再設定したほうがいいかな？
-        printf("ERROR : %s(fd=%d): Cannot socket accepting? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Cannot socket accepting? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
-    printf("INFO  : %s(fd=%d): OK. client fd=%d\n", __func__, server_watcher->socket_fd, socket_result);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): OK. client fd=%d\n", __func__, server_watcher->socket_fd, socket_result);
+    logging(LOGLEVEL_INFO, log_str);
 
     // クライアント別設定用構造体ポインタのメモリ領域を確保
     client_watcher = (struct EVS_ev_client_t *)calloc(1, sizeof(*client_watcher));
     // メモリ領域が確保できなかったら
     if (client_watcher == NULL)
     {
-        printf("ERROR : %s(fd=%d): Cannot calloc client_watcher's memory? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Cannot calloc client_watcher's memory? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
     // このソケットでSSL/TLS対応しなければいけない(ssl_support==1)なら
     if (server_watcher->ssl_support == 1)
     {
-        printf("INFO  : %s(fd=%d): SSL port.\n", __func__, server_watcher->socket_fd);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL port.\n", __func__, server_watcher->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
         // ----------------
         // OpenSSL(SSL_new : SSL設定情報を元に、SSL接続情報を生成)
         // ----------------
@@ -318,10 +358,12 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
         // SSL設定情報を元に、SSL接続情報を生成がエラーだったら
         if (client_watcher->ssl == NULL)
         {
-            printf("ERROR : %s(fd=%d): SSL_new(): Cannot get new SSL structure!? %s\n", __func__, server_watcher->socket_fd, ERR_reason_error_string(ERR_get_error()));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): Cannot get new SSL structure!? %s\n", __func__, server_watcher->socket_fd, ERR_reason_error_string(ERR_get_error()));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
-        printf("INFO  : %s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
 
         // ----------------
         // OpenSSL(SSL_set_fd : 接続してきたソケットファイルディスクリプタを、SSL_set_fd()でSSL接続情報に紐づけ)
@@ -330,10 +372,12 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
         if (SSL_set_fd(client_watcher->ssl, socket_result) == 0)
         {
             // ここでもソケットをクローズをしたほうがいいかな？それともソケットを再設定したほうがいいかな？
-            printf("ERROR : %s(fd=%d): SSL_set_fd(client fd=%d): Cannot SSL socket binding!? %s\n", __func__, server_watcher->socket_fd, socket_result, ERR_reason_error_string(ERR_get_error()));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): Cannot SSL socket binding!? %s\n", __func__, server_watcher->socket_fd, socket_result, ERR_reason_error_string(ERR_get_error()));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
-        printf("INFO  : %s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
+        logging(LOGLEVEL_INFO, log_str);
 
         // SSLハンドシェイク前(=1)に設定
         client_watcher->ssl_status = 1;
@@ -341,7 +385,8 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     // 非SSL/TLSソケットなら
     else
     {
-        printf("INFO  : %s(fd=%d): Not SSL port.\n", __func__, server_watcher->socket_fd);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Not SSL port.\n", __func__, server_watcher->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
         // 非SSL通信(=0)に設定
         client_watcher->ssl_status = 0;
     }
@@ -359,7 +404,8 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
         // メモリ領域が確保できなかったら
         if (timeout_watcher == NULL)
         {
-            printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
 
@@ -371,7 +417,8 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
 
         // テールキューの最後にこの接続の情報を追加する
         TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
-        printf("INFO  : %s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
+        logging(LOGLEVEL_INFO, log_str);
     }
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
@@ -385,21 +432,25 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     // メモリ領域が確保できなかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_client_tailq, client_watcher, entries);
-    printf("INFO  : %s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // クライアント別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
     // ----------------
     ev_io_init(&client_watcher->io_watcher, CB_recv, client_watcher->socket_fd, EV_READ);
     ev_io_start(loop, &client_watcher->io_watcher);
-    printf("INFO  : %s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
-    printf("INFO  : %s(): ev_io_start(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 }
 
 // --------------------------------
@@ -415,6 +466,8 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     struct EVS_ev_client_t          *client_watcher;                                        // クライアント別設定用構造体ポインタ
     struct EVS_timer_t              *timeout_watcher;                                       // タイマー別構造体ポインタ
 
+    char                            log_str[MAX_LOG_LENGTH];
+
     // ----------------
     // ソケットアクセプト(accept : リッスンポートに接続があった)
     // ----------------
@@ -423,24 +476,28 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     if (socket_result < 0)
     {
         // ここでもソケットをクローズをしたほうがいいかな？それともソケットを再設定したほうがいいかな？
-        printf("ERROR : %s(fd=%d): Cannot socket accepting? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Cannot socket accepting? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
-    printf("INFO  : %s(fd=%d): OK. client fd=%d\n", __func__, server_watcher->socket_fd, socket_result);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): OK. client fd=%d\n", __func__, server_watcher->socket_fd, socket_result);
+    logging(LOGLEVEL_INFO, log_str);
 
     // クライアント別設定用構造体ポインタのメモリ領域を確保
     client_watcher = (struct EVS_ev_client_t *)calloc(1, sizeof(*client_watcher));
     // メモリ領域が確保できなかったら
     if (client_watcher == NULL)
     {
-        printf("ERROR : %s(fd=%d): Cannot calloc client_watcher's memory? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Cannot calloc client_watcher's memory? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
     // このソケットでSSL/TLS対応しなければいけない(ssl_support==1)なら
     if (server_watcher->ssl_support == 1)
     {
-        printf("INFO  : %s(fd=%d): SSL port.\n", __func__, server_watcher->socket_fd);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL port.\n", __func__, server_watcher->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
         // ----------------
         // OpenSSL(SSL_new : SSL設定情報を元に、SSL接続情報を生成)
         // ----------------
@@ -448,10 +505,12 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
         // SSL設定情報を元に、SSL接続情報を生成がエラーだったら
         if (client_watcher->ssl == NULL)
         {
-            printf("ERROR : %s(fd=%d): SSL_new(): Cannot get new SSL structure!? %s\n", __func__, server_watcher->socket_fd, ERR_reason_error_string(ERR_get_error()));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): Cannot get new SSL structure!? %s\n", __func__, server_watcher->socket_fd, ERR_reason_error_string(ERR_get_error()));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
-        printf("INFO  : %s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
 
         // ----------------
         // OpenSSL(SSL_set_fd : 接続してきたソケットファイルディスクリプタを、SSL_set_fd()でSSL接続情報に紐づけ)
@@ -460,10 +519,12 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
         if (SSL_set_fd(client_watcher->ssl, socket_result) == 0)
         {
             // ここでもソケットをクローズをしたほうがいいかな？それともソケットを再設定したほうがいいかな？
-            printf("ERROR : %s(fd=%d): SSL_set_fd(client fd=%d): Cannot SSL socket binding!? %s\n", __func__, server_watcher->socket_fd, socket_result, ERR_reason_error_string(ERR_get_error()));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): Cannot SSL socket binding!? %s\n", __func__, server_watcher->socket_fd, socket_result, ERR_reason_error_string(ERR_get_error()));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
-        printf("INFO  : %s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
+        logging(LOGLEVEL_INFO, log_str);
 
         // SSLハンドシェイク前(=1)に設定
         client_watcher->ssl_status = 1;
@@ -471,7 +532,8 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     // 非SSL/TLSソケットなら
     else
     {
-        printf("INFO  : %s(fd=%d): Not SSL port.\n", __func__, server_watcher->socket_fd);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Not SSL port.\n", __func__, server_watcher->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
         // 非SSL通信(=0)に設定
         client_watcher->ssl_status = 0;
     }
@@ -489,7 +551,8 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
         // メモリ領域が確保できなかったら
         if (timeout_watcher == NULL)
         {
-            printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
 
@@ -501,7 +564,8 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
 
         // テールキューの最後にこの接続の情報を追加する
         TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
-        printf("INFO  : %s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
+        logging(LOGLEVEL_INFO, log_str);
     }
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
@@ -515,21 +579,25 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     // メモリ領域が確保できなかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_client_tailq, client_watcher, entries);
-    printf("INFO  : %s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // クライアント別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
     // ----------------
     ev_io_init(&client_watcher->io_watcher, CB_recv, client_watcher->socket_fd, EV_READ);
     ev_io_start(loop, &client_watcher->io_watcher);
-    printf("INFO  : %s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
-    printf("INFO  : %s(): ev_io_start(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 }
 
 // --------------------------------
@@ -544,6 +612,8 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
     struct EVS_ev_client_t          *client_watcher;                                        // クライアント別設定用構造体ポインタ
     struct EVS_timer_t              *timeout_watcher;                                       // タイマー別構造体ポインタ
 
+    char                            log_str[MAX_LOG_LENGTH];
+
     // ----------------
     // ソケットアクセプト(accept : リッスンポートに接続があった)
     // ----------------
@@ -552,17 +622,20 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
     if (socket_result < 0)
     {
         // ここでもソケットクローズをしたほうがいいかな？
-        printf("ERROR : %s(fd=%d): Cannot socket accepting? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Cannot socket accepting? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
-    printf("INFO  : %s(fd=%d): OK. client fd=%d\n", __func__, server_watcher->socket_fd, socket_result);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): OK. client fd=%d\n", __func__, server_watcher->socket_fd, socket_result);
+    logging(LOGLEVEL_INFO, log_str);
 
     // クライアント別設定用構造体ポインタのメモリ領域を確保
     client_watcher = (struct EVS_ev_client_t *)calloc(1, sizeof(*client_watcher));
     // メモリ領域が確保できなかったら
     if (client_watcher == NULL)
     {
-        printf("ERROR : %s(fd=%d): Cannot calloc client_watcher's memory? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Cannot calloc client_watcher's memory? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
@@ -579,7 +652,8 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
         // メモリ領域が確保できなかったら
         if (timeout_watcher == NULL)
         {
-            printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
 
@@ -591,7 +665,8 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
 
         // テールキューの最後にこの接続の情報を追加する
         TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
-        printf("INFO  : %s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
+        logging(LOGLEVEL_INFO, log_str);
     }
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
@@ -600,15 +675,18 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
 
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_client_tailq, client_watcher, entries);
-    printf("INFO  : %s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // クライアント別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
     // ----------------
     ev_io_init(&client_watcher->io_watcher, CB_recv, client_watcher->socket_fd, EV_READ);
     ev_io_start(loop, &client_watcher->io_watcher);
-    printf("INFO  : %s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
-    printf("INFO  : %s(): ev_io_start(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 }
 
 // --------------------------------
@@ -616,12 +694,14 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
 // --------------------------------
 static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
 {
-    struct EVS_ev_server_t    *server_watcher = (struct EVS_ev_server_t *)watcher;          // サーバー別設定用構造体ポインタ
+    struct EVS_ev_server_t          *server_watcher = (struct EVS_ev_server_t *)watcher;          // サーバー別設定用構造体ポインタ
+    char                            log_str[MAX_LOG_LENGTH];
 
     // イベントにエラーフラグが含まれていたら
     if (EV_ERROR & revents)
     {
-        printf("ERROR : %s(): Invalid event!?\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Invalid event!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return;
     }
 
@@ -634,7 +714,8 @@ static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // ----------------
         // UNIXドメインソケットの初期化
         // ----------------
-        printf("INFO  : %s(): CB_accept_unix(): Go!\n", __func__);              // 呼ぶ前にログを出力
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): CB_accept_unix(): Go!\n", __func__);              // 呼ぶ前にログを出力
+        logging(LOGLEVEL_INFO, log_str);
         CB_accept_unix(loop, server_watcher, revents);                          // UNIXドメインソケットのアクセプト処理
     }
     // 該当ソケットのプロトコルファミリーがPF_INET(=IPv4でのアクセス)なら
@@ -643,7 +724,8 @@ static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // ----------------
         // IPv4ソケットの初期化
         // ----------------
-        printf("INFO  : %s(): CB_accept_ipv4(): Go!\n", __func__);              // 呼ぶ前にログを出力
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): CB_accept_ipv4(): Go!\n", __func__);              // 呼ぶ前にログを出力
+        logging(LOGLEVEL_INFO, log_str);
         CB_accept_ipv4(loop, server_watcher, revents);                          // IPv4ソケットのアクセプト処理
     } 
     // 該当ソケットのプロトコルファミリーがPF_INET6(=IPv6でのアクセス)なら
@@ -652,12 +734,14 @@ static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // ----------------
         // IPv6ソケットの初期化
         // ----------------
-        printf("INFO  : %s(): CB_accept_ipv6(): Go!\n", __func__);              // 呼ぶ前にログを出力
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): CB_accept_ipv6(): Go!\n", __func__);              // 呼ぶ前にログを出力
+        logging(LOGLEVEL_INFO, log_str);
         CB_accept_ipv6(loop, server_watcher, revents);                          // IPv6ソケットのアクセプト処理
     }
     else
     {
-        printf("ERROR : %s(): Cannot support protocol family!? 2\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot support protocol family!? 2\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
     }
 
     // 戻る
