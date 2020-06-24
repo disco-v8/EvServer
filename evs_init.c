@@ -77,6 +77,14 @@ SSL_CTX                         *EVS_ctx;                       // SSL設定情�
 // ----------------
 // その他の変数
 // ----------------
+const char                      *loglevel_list[] = {            // ログレベル文字列テーブル
+                                    "DEBUG",
+                                    "INFO ",
+                                    "WARN ",
+                                    "ERROR",
+};
+
+int                             EVS_log_fd = 0;                 // ログファイルディスクリプタ
 
 // ----------------------------------------------------------------------
 // コード部分
@@ -107,6 +115,8 @@ SSL_CTX                         *EVS_ctx;                       // SSL設定情�
 // --------------------------------
 int INIT_libev(void)
 {
+    char                            log_str[MAX_LOG_LENGTH];
+
     // ----------------
     // イベントループ生成
     // ----------------
@@ -114,7 +124,8 @@ int INIT_libev(void)
     // イベントループの生成ができなかったら
     if (!EVS_loop)
     {
-        printf("ERROR : ev_loop_new(EVFLAG_AUTO): Cannot make new loop!?\n");
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_loop_new(EVFLAG_AUTO): Cannot make new loop!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
 
@@ -123,18 +134,24 @@ int INIT_libev(void)
     // ----------------
     ev_signal_init(&signal_watcher_sighup, CB_sighup, SIGHUP);
     ev_signal_start(EVS_loop, &signal_watcher_sighup);
-    printf("INFO  : ev_signal_init(CB_sighup): OK.\n");
-    printf("INFO  : ev_signal_start(): OK.\n");
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_init(CB_sighup): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     ev_signal_init(&signal_watcher_sigint, CB_sigint, SIGINT);
     ev_signal_start(EVS_loop, &signal_watcher_sigint);
-    printf("INFO  : ev_signal_init(CB_sigint): OK.\n");
-    printf("INFO  : ev_signal_start(): OK.\n");
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_init(CB_sigint): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     ev_signal_init(&signal_watcher_sigterm, CB_sigterm, SIGTERM);
     ev_signal_start(EVS_loop, &signal_watcher_sigterm);
-    printf("INFO  : ev_signal_init(CB_sigterm): OK.\n");
-    printf("INFO  : ev_signal_start(): OK.\n");
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_init(CB_sigterm): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     return 0;
 }
@@ -145,6 +162,7 @@ int INIT_libev(void)
 int INIT_openssl(void)
 {
     int                             init_result;
+    char                            log_str[MAX_LOG_LENGTH];
 
     // ----------------
     // OpenSSLの各種初期化処理(OpenSSL 1.1.0以降非推奨)
@@ -152,19 +170,22 @@ int INIT_openssl(void)
     // サーバー証明書(PEM)CAファイルがNULLなら
     if (EVS_config.ssl_ca_file == NULL)
     {
-        printf("ERROR : INIT_openssl(): Cannot open SSL/TLS CA file!? %s\n", EVS_config.ssl_ca_file);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot open SSL/TLS CA file!? %s\n", __func__, EVS_config.ssl_ca_file);
+        logging(LOGLEVEL_ERROR, log_str);
         return 0;
     }
     // サーバー証明書(PEM)CERTファイルがNULLなら
     if (EVS_config.ssl_cert_file == NULL)
     {
-        printf("ERROR : INIT_openssl(): Cannot open SSL/TLS CERT file!? %s\n", EVS_config.ssl_cert_file);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot open SSL/TLS CERT file!? %s\n", __func__, EVS_config.ssl_cert_file);
+        logging(LOGLEVEL_ERROR, log_str);
         return 0;
     }
     // サーバー証明書(PEM)KEYファイルがNULLなら
     if (EVS_config.ssl_key_file == NULL)
     {
-        printf("ERROR : INIT_openssl(): Cannot open SSL/TLS KEY file!? %s\n", EVS_config.ssl_key_file);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot open SSL/TLS KEY file!? %s\n", __func__, EVS_config.ssl_key_file);
+        logging(LOGLEVEL_ERROR, log_str);
         return 0;
     }
 
@@ -178,10 +199,11 @@ int INIT_openssl(void)
     EVS_ctx = SSL_CTX_new(SSLv23_server_method());
     if (EVS_ctx == NULL)
     {
-        printf("ERROR : SSL_CTX_new(): Cannot initialize SSL_CTX!? %s\n", ERR_reason_error_string(ERR_get_error()));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): SSL_CTX_new(): Cannot initialize SSL_CTX!? %s\n", __func__, ERR_reason_error_string(ERR_get_error()));
+        logging(LOGLEVEL_ERROR, log_str);
         return init_result;
     }
-    printf("INFO  : SSL_CTX_new(): OK.\n");
+    logging(LOGLEVEL_INFO, "SSL_CTX_new(): OK.\n");
     // SSL設定でTLSv1.2以上しか許可しない(1.1.0以降はSSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION)、でいい)
     SSL_CTX_set_options(EVS_ctx, (SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1));
 
@@ -192,37 +214,45 @@ int INIT_openssl(void)
     init_result = SSL_CTX_load_verify_locations(EVS_ctx, EVS_config.ssl_ca_file, NULL);
     if (init_result != 1)
     {
-        printf("ERROR : SSL_CTX_load_verify_locations(%s): %s\n", EVS_config.ssl_ca_file, ERR_reason_error_string(ERR_get_error()));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): SSL_CTX_load_verify_locations(%s): %s\n", EVS_config.ssl_ca_file, ERR_reason_error_string(ERR_get_error()));
+        logging(LOGLEVEL_ERROR, log_str);
         return 0;
     }
-    printf("INFO  : SSL_CTX_load_verify_locations(%s): OK.\n", EVS_config.ssl_ca_file);
+    snprintf(log_str, MAX_LOG_LENGTH, "SSL_CTX_load_verify_locations(%s): OK.\n", EVS_config.ssl_ca_file);
+    logging(LOGLEVEL_INFO, log_str);
 
     // サーバー証明書(PEM)CERTファイルの設定
     init_result = SSL_CTX_use_certificate_file(EVS_ctx, EVS_config.ssl_cert_file, SSL_FILETYPE_PEM);
     if (init_result != 1)
     {
-        printf("ERROR : SSL_CTX_use_certificate_file(%s): %s\n", EVS_config.ssl_cert_file, ERR_reason_error_string(ERR_get_error()));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): SSL_CTX_use_certificate_file(%s): %s\n", EVS_config.ssl_cert_file, ERR_reason_error_string(ERR_get_error()));
+       logging(LOGLEVEL_ERROR, log_str);
         return 0;
     }
-    printf("INFO  : SSL_CTX_use_certificate_file(%s): OK.\n", EVS_config.ssl_cert_file);
+    snprintf(log_str, MAX_LOG_LENGTH, "SSL_CTX_use_certificate_file(%s): OK.\n", EVS_config.ssl_cert_file);
+    logging(LOGLEVEL_INFO, log_str);
 
     // サーバー証明書(PEM)KEYファイルの設定
     init_result = SSL_CTX_use_PrivateKey_file(EVS_ctx, EVS_config.ssl_key_file, SSL_FILETYPE_PEM);
     if (init_result != 1)
     {
-        printf("ERROR : SSL_CTX_use_PrivateKey_file(%s): %s\n", EVS_config.ssl_key_file, ERR_reason_error_string(ERR_get_error()));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): SSL_CTX_use_PrivateKey_file(%s): %s\n", EVS_config.ssl_key_file, ERR_reason_error_string(ERR_get_error()));
+        logging(LOGLEVEL_ERROR, log_str);
         return 0;
     }
-    printf("INFO  : SSL_CTX_use_PrivateKey_file(%s): OK.\n", EVS_config.ssl_key_file);
+    snprintf(log_str, MAX_LOG_LENGTH, "SSL_CTX_use_PrivateKey_file(%s): OK.\n", EVS_config.ssl_key_file);
+    logging(LOGLEVEL_INFO, log_str);
 
     // CERTとKEYとの整合性をチェック
     init_result = SSL_CTX_check_private_key(EVS_ctx);
     if (init_result != 1)
     {
-        printf("ERROR : SSL_CTX_check_private_key(): %s\n", ERR_reason_error_string(ERR_get_error()));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): SSL_CTX_check_private_key(): %s\n", ERR_reason_error_string(ERR_get_error()));
+        logging(LOGLEVEL_ERROR, log_str);
         return 0;
     }
-    printf("INFO  : SSL_CTX_check_private_key(): OK.\n");
+    snprintf(log_str, MAX_LOG_LENGTH, "SSL_CTX_check_private_key(): OK.\n");
+    logging(LOGLEVEL_INFO, log_str);
 
     return 1;
 }
@@ -233,6 +263,7 @@ int INIT_openssl(void)
 int INIT_keepalive(struct EVS_ev_server_t * server_watcher)
 {
     int                             socket_result;
+    char                            log_str[MAX_LOG_LENGTH];
 
     // ----------------
     // UNIXドメイン以外のソケット(!= PF_UNIX)なら、ソケットのその他のパラメータを設定(KeepAlive、Timeout、バッファサイズ、バッファリングOFF、etc...)
@@ -249,10 +280,12 @@ int INIT_keepalive(struct EVS_ev_server_t * server_watcher)
     // ソケットのオプション設定が出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): setsockopt(fd=%d, SOL_SOCKET, SO_KEEPALIVE, keepalive=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, SOL_SOCKET, SO_KEEPALIVE, keepalive=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): setsockopt(socket_fd=%d, SOL_SOCKET, SO_KEEPALIVE, keepalive=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(socket_fd=%d, SOL_SOCKET, SO_KEEPALIVE, keepalive=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive);
+    logging(LOGLEVEL_INFO, log_str);
 
     // KeepAliveのパラメータは 
     // ・TCP_KEEPIDLE       → /proc/sys/net/ipv6/tcp_keepalive_time     (デフォルト7200秒)
@@ -268,30 +301,36 @@ int INIT_keepalive(struct EVS_ev_server_t * server_watcher)
         // ソケットのオプション設定が出来なかったら
         if (socket_result < 0)
         {
-            printf("ERROR : %s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPIDLE, idletime=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_idletime, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPIDLE, idletime=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_idletime, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return -1;
         }
-        printf("INFO  : %s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPIDLE, idletime=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_idletime);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPIDLE, idletime=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_idletime);
+        logging(LOGLEVEL_INFO, log_str);
 
         // TCP_KEEPINTVLを設定 → https://linuxjm.osdn.jp/html/LDP_man-pages/man7/tcp.7.html
         socket_result = setsockopt(server_watcher->socket_fd, IPPROTO_TCP, TCP_KEEPINTVL, &EVS_config.keepalive_intval, sizeof(EVS_config.keepalive_intval));
         // ソケットのオプション設定が出来なかったら
         if (socket_result < 0)
         {
-            printf("ERROR : %s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPINTVL, intval=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_intval, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPINTVL, intval=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_intval, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return -1;
         }
-        printf("INFO  : %s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPINTVL, intval=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_intval);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPINTVL, intval=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_intval);
+        logging(LOGLEVEL_INFO, log_str);
 
         // TCP_KEEPCNTを設定 → https://linuxjm.osdn.jp/html/LDP_man-pages/man7/tcp.7.html
         socket_result = setsockopt(server_watcher->socket_fd, IPPROTO_TCP, TCP_KEEPCNT, &EVS_config.keepalive_probes, sizeof(EVS_config.keepalive_probes));
         // ソケットのオプション設定が出来なかったら
         if (socket_result < 0)
         {
-            printf("ERROR : %s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPCNT, probes=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_probes, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPCNT, probes=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_probes, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return -1;
         }
-        printf("INFO  : %s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPCNT, probes=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_probes);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_TCP, TCP_KEEPCNT, probes=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive_probes);
+        logging(LOGLEVEL_INFO, log_str);
     }
     return 0;
 }
@@ -303,6 +342,7 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
 {
     int                             socket_result;
     int                             ipv6only_flag = 1;                  // IPv6対応(0:非対応、1:対応))
+    char                            log_str[MAX_LOG_LENGTH];
 
     // --------------------------------
     // ソケット処理
@@ -310,7 +350,8 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
     // プロトコルファミリーがPF_INET6でなければ
     if (server_watcher->socket_address.sa_ipv6.sin6_family != PF_INET6)
     {
-        printf("ERROR : %s(%d): Cannot support protocol family!?\n", __func__, server_watcher->socket_address.sa_ipv6.sin6_family);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(%d): Cannot support protocol family!?\n", __func__, server_watcher->socket_address.sa_ipv6.sin6_family);
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
 
@@ -321,10 +362,12 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
     // ソケット生成が出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): socket(%s, SOCK_STREAM, 0): Cannot create new socket? errno=%d (%s)\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv6.sin6_family], errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): socket(%s, SOCK_STREAM, 0): Cannot create new socket? errno=%d (%s)\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv6.sin6_family], errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): socket(%s, SOCK_STREAM, 0): Create new socket. fd=%d\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv6.sin6_family], socket_result);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): socket(%s, SOCK_STREAM, 0): Create new socket. fd=%d\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv6.sin6_family], socket_result);
+    logging(LOGLEVEL_INFO, log_str);
     // ソケットディスクリプタを設定
     server_watcher->socket_fd = socket_result;
 
@@ -340,10 +383,12 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
     // ソケットのオプション設定が出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): setsockopt(fd=%d, IPPROTO_IPV6, IPV6_V6ONLY, ipv6=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, ipv6only_flag, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_IPV6, IPV6_V6ONLY, ipv6=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, ipv6only_flag, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): setsockopt(fd=%d, IPPROTO_IPV6, IPV6_V6ONLY, ipv6=%d): OK.\n", __func__, server_watcher->socket_fd, ipv6only_flag);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): setsockopt(fd=%d, IPPROTO_IPV6, IPV6_V6ONLY, ipv6=%d): OK.\n", __func__, server_watcher->socket_fd, ipv6only_flag);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // ソケット紐づけ(bind : ソケットのファイルディスクリプタとIPv6ソケットソケットアドレスを紐づけ)
@@ -352,10 +397,12 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
     // ソケットアドレスの紐づけが出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): bind(fd=%d, in6addr_any): Cannot socket binding? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): bind(fd=%d, in6addr_any): Cannot socket binding? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): bind(fd=%d, in6addr_any): OK.\n", __func__, server_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): bind(fd=%d, in6addr_any): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // KeepAliveの初期化
@@ -364,10 +411,12 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
     // ソケットのKeepAlive設定が出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): INIT_keepalive(fd=%d, keepalive=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_keepalive(fd=%d, keepalive=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): INIT_keepalive(fd=%d, keepalive=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_keepalive(fd=%d, keepalive=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // ソケットリッスン(listen : SOMAXCONN = /proc/sys/net/core/somaxconnの値を接続最大数としてリッスン開始)
@@ -376,17 +425,20 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
     // ソケットアドレスの紐づけが出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): listen(fd=%d, %d): Cannot socket listen? errno=%d (%s)\n", __func__, server_watcher->socket_fd, SOMAXCONN, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): listen(fd=%d, %d): Cannot socket listen? errno=%d (%s)\n", __func__, server_watcher->socket_fd, SOMAXCONN, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): listen(fd=%d, %d): OK.\n", __func__, server_watcher->socket_fd, SOMAXCONN);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): listen(fd=%d, %d): OK.\n", __func__, server_watcher->socket_fd, SOMAXCONN);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // テールキュー処理
     // --------------------------------
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_server_tailq, server_watcher, entries);
-    printf("INFO  : %s(): TAILQ_INSERT_TAIL(server fd=%d): OK.\n", __func__, server_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(server fd=%d): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // libev 処理
@@ -394,8 +446,10 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
     // サーバー別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
     ev_io_init(&server_watcher->io_watcher, CB_accept, server_watcher->socket_fd, EV_READ);
     ev_io_start(EVS_loop, &server_watcher->io_watcher);
-    printf("INFO  : %s(): ev_io_init(CB_accept, server fd=%d, EV_READ): OK.\n", __func__, server_watcher->socket_fd);
-    printf("INFO  : %s(): ev_io_start(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_accept, server fd=%d, EV_READ): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     return socket_result;
 }
@@ -406,6 +460,7 @@ int INIT_pf_inet6(struct EVS_ev_server_t * server_watcher)
 int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
 {
     int                             socket_result;
+    char                            log_str[MAX_LOG_LENGTH];
 
     // --------------------------------
     // ソケット処理
@@ -413,7 +468,8 @@ int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
     // プロトコルファミリーがPF_INETでなければ
     if (server_watcher->socket_address.sa_ipv4.sin_family != PF_INET)
     {
-        printf("ERROR : %s(%d): Cannot support protocol family!?\n", __func__, server_watcher->socket_address.sa_ipv4.sin_family);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(%d): Cannot support protocol family!?\n", __func__, server_watcher->socket_address.sa_ipv4.sin_family);
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
 
@@ -424,10 +480,12 @@ int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
     // ソケット生成が出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): socket(%s, SOCK_STREAM, 0): Cannot create new socket? errno=%d (%s)\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv4.sin_family], errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): socket(%s, SOCK_STREAM, 0): Cannot create new socket? errno=%d (%s)\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv4.sin_family], errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): socket(%s, SOCK_STREAM, 0): Create new socket. fd=%d\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv4.sin_family], socket_result);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): socket(%s, SOCK_STREAM, 0): Create new socket. fd=%d\n", __func__, pf_name_list[server_watcher->socket_address.sa_ipv4.sin_family], socket_result);
+    logging(LOGLEVEL_INFO, log_str);
     // ソケットディスクリプタを設定
     server_watcher->socket_fd = socket_result;
 
@@ -443,10 +501,12 @@ int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
     // ソケットアドレスの紐づけが出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): bind(fd=%d, INADDR_ANY): Cannot socket binding? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): bind(fd=%d, INADDR_ANY): Cannot socket binding? errno=%d (%s)\n", __func__, server_watcher->socket_fd, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): bind(fd=%d, INADDR_ANY): OK.\n", __func__, server_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): bind(fd=%d, INADDR_ANY): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // KeepAliveの初期化
@@ -455,10 +515,12 @@ int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
     // ソケットのKeepAlive設定が出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): INIT_keepalive(fd=%d, keepalive=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_keepalive(fd=%d, keepalive=%d): Cannot set socket option!? errno=%d (%s)\n", __func__, server_watcher->socket_fd, EVS_config.keepalive, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): INIT_keepalive(fd=%d, keepalive=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_keepalive(fd=%d, keepalive=%d): OK.\n", __func__, server_watcher->socket_fd, EVS_config.keepalive);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // ソケットリッスン(listen : SOMAXCONN = /proc/sys/net/core/somaxconnの値を接続最大数としてリッスン開始)
@@ -467,17 +529,20 @@ int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
     // ソケットアドレスの紐づけが出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): listen(fd=%d, %d): Cannot socket listen? errno=%d (%s)\n", __func__, server_watcher->socket_fd, SOMAXCONN, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): listen(fd=%d, %d): Cannot socket listen? errno=%d (%s)\n", __func__, server_watcher->socket_fd, SOMAXCONN, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): listen(fd=%d, %d): OK.\n", __func__, server_watcher->socket_fd, SOMAXCONN);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): listen(fd=%d, %d): OK.\n", __func__, server_watcher->socket_fd, SOMAXCONN);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // テールキュー処理
     // --------------------------------
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_server_tailq, server_watcher, entries);
-    printf("INFO  : %s(): TAILQ_INSERT_TAIL(server fd=%d): OK.\n", __func__, server_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(server fd=%d): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // libev 処理
@@ -485,8 +550,10 @@ int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
     // サーバー別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
     ev_io_init(&server_watcher->io_watcher, CB_accept, server_watcher->socket_fd, EV_READ);
     ev_io_start(EVS_loop, &server_watcher->io_watcher);
-    printf("INFO  : %s(): ev_io_init(CB_accept, server fd=%d, EV_READ): OK.\n", __func__, server_watcher->socket_fd);
-    printf("INFO  : %s(): ev_io_start(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_accept, server fd=%d, EV_READ): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     return socket_result;
 }
@@ -497,6 +564,7 @@ int INIT_pf_inet(struct EVS_ev_server_t * server_watcher)
 int INIT_pf_unix(struct EVS_ev_server_t * server_watcher)
 {
     int                             socket_result;
+    char                            log_str[MAX_LOG_LENGTH];
 
     // --------------------------------
     // ソケット処理
@@ -504,7 +572,8 @@ int INIT_pf_unix(struct EVS_ev_server_t * server_watcher)
     // プロトコルファミリーがPF_UNIXでなければ
     if (server_watcher->socket_address.sa_un.sun_family != PF_UNIX)
     {
-        printf("ERROR : %s(%d): Cannot support protocol family!?\n", __func__, server_watcher->socket_address.sa_un.sun_family);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(%d): Cannot support protocol family!?\n", __func__, server_watcher->socket_address.sa_un.sun_family);
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
 
@@ -515,10 +584,12 @@ int INIT_pf_unix(struct EVS_ev_server_t * server_watcher)
     // ソケット生成が出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): socket(%s, SOCK_STREAM): Cannot create new socket? errno=%d (%s)\n", __func__, pf_name_list[server_watcher->socket_address.sa_un.sun_family], errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): socket(%s, SOCK_STREAM): Cannot create new socket? errno=%d (%s)\n", __func__, pf_name_list[server_watcher->socket_address.sa_un.sun_family], errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): socket(%s, SOCK_STREAM): Create new socket. fd=%d\n", __func__, pf_name_list[server_watcher->socket_address.sa_un.sun_family], socket_result);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): socket(%s, SOCK_STREAM): Create new socket. fd=%d\n", __func__, pf_name_list[server_watcher->socket_address.sa_un.sun_family], socket_result);
+    logging(LOGLEVEL_INFO, log_str);
     // ソケットディスクリプタを設定
     server_watcher->socket_fd = socket_result;
 
@@ -534,10 +605,12 @@ int INIT_pf_unix(struct EVS_ev_server_t * server_watcher)
     // ソケットアドレスの紐づけが出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): bind(fd=%d, %s): Cannot socket binding? errno=%d (%s)\n", __func__, server_watcher->socket_fd, server_watcher->socket_address.sa_un.sun_path, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): bind(fd=%d, %s): Cannot socket binding? errno=%d (%s)\n", __func__, server_watcher->socket_fd, server_watcher->socket_address.sa_un.sun_path, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): bind(fd=%d, %s): OK.\n", __func__, server_watcher->socket_fd, server_watcher->socket_address.sa_un.sun_path);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): bind(fd=%d, %s): OK.\n", __func__, server_watcher->socket_fd, server_watcher->socket_address.sa_un.sun_path);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // UNIXドメイン以外のソケット(!= PF_UNIX)なら、ソケットのその他のパラメータを設定(KeepAlive、Timeout、バッファサイズ、バッファリングOFF、etc...)
@@ -551,17 +624,20 @@ int INIT_pf_unix(struct EVS_ev_server_t * server_watcher)
     // ソケットアドレスの紐づけが出来なかったら
     if (socket_result < 0)
     {
-        printf("ERROR : %s(): listen(fd=%d, %d):Cannot socket listen? errno=%d (%s)\n", __func__, server_watcher->socket_fd, SOMAXCONN, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): listen(fd=%d, %d):Cannot socket listen? errno=%d (%s)\n", __func__, server_watcher->socket_fd, SOMAXCONN, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
-    printf("INFO  : %s(): listen(fd=%d, %d): OK.\n", __func__, server_watcher->socket_fd, SOMAXCONN);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): listen(fd=%d, %d): OK.\n", __func__, server_watcher->socket_fd, SOMAXCONN);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // テールキュー処理
     // --------------------------------
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_server_tailq, server_watcher, entries);
-    printf("INFO  : %s(): TAILQ_INSERT_TAIL(server fd=%d): OK.\n", __func__, server_watcher->socket_fd);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(server fd=%d): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // libev 処理
@@ -569,8 +645,10 @@ int INIT_pf_unix(struct EVS_ev_server_t * server_watcher)
     // サーバー別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
     ev_io_init(&server_watcher->io_watcher, CB_accept, server_watcher->socket_fd, EV_READ);
     ev_io_start(EVS_loop, &server_watcher->io_watcher);
-    printf("INFO  : %s(): ev_io_init(CB_accept, server fd=%d, EV_READ): OK.\n", __func__, server_watcher->socket_fd);
-    printf("INFO  : %s(): ev_io_start(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_accept, server fd=%d, EV_READ): OK.\n", __func__, server_watcher->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     return socket_result;
 }
@@ -582,6 +660,7 @@ int INIT_socket(struct EVS_port_t *listen_port)
 {
     int                             init_result;
     struct EVS_ev_server_t          *server_watcher;                // ev_io＋ソケットファイルディスクリプタ、ソケットアドレスなどの拡張構造体
+    char                            log_str[MAX_LOG_LENGTH];
 
     // --------------------------------
     // プロトコルファミリー別に各種初期化処理
@@ -599,7 +678,8 @@ int INIT_socket(struct EVS_port_t *listen_port)
         // メモリ領域が確保できなかったら
         if (server_watcher == NULL)
         {
-            printf("ERROR : %s(): Cannot calloc server_watcher's memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc server_watcher's memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
             return;
         }
         // ----------------
@@ -623,7 +703,8 @@ int INIT_socket(struct EVS_port_t *listen_port)
             // メモリ領域が確保できなかったら
             if (server_watcher == NULL)
             {
-                printf("ERROR : %s(): Cannot calloc server_watcher's memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+                snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc server_watcher's memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+                logging(LOGLEVEL_ERROR, log_str);
                 return;
             }
             // ----------------
@@ -645,7 +726,8 @@ int INIT_socket(struct EVS_port_t *listen_port)
             // メモリ領域が確保できなかったら
             if (server_watcher == NULL)
             {
-                printf("ERROR : %s(): Cannot calloc server_watcher's memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+                snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc server_watcher's memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+                logging(LOGLEVEL_ERROR, log_str);
                 return;
             }
             // ----------------
@@ -661,7 +743,8 @@ int INIT_socket(struct EVS_port_t *listen_port)
     // 上記以外場合には
     else
     {
-        printf("ERROR : %s(): Cannot support port number!? %d\n", listen_port->port);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot support port number!? %d\n", listen_port->port);
+        logging(LOGLEVEL_ERROR, log_str);
         init_result = -1;
     }
     // 戻る
@@ -675,25 +758,33 @@ int INIT_all(int argc, char *argv[])
 {
     int                             init_result;
     struct EVS_port_t               *listen_port;                       // ポート別設定用構造体ポインタ
+    char                            log_str[MAX_LOG_LENGTH];
+
+    pid_t                           pid;                                // フォーク後のプロセスID
+    int                             pidfile_fd = 0;                     // PIDファイルディスクリプタ
 
     // --------------------------------
     // 各テールキューの初期化処理
     // --------------------------------
     // ポート用テールキューの初期化
     TAILQ_INIT(&EVS_port_tailq);
-    printf("INFO  : %s(): TAILQ_INIT(&EVS_port_tailq): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INIT(&EVS_port_tailq): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     // サーバー用テールキューの初期化
     TAILQ_INIT(&EVS_server_tailq);
-    printf("INFO  : %s(): TAILQ_INIT(&EVS_server_tailq): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INIT(&EVS_server_tailq): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     // クライアント用テールキューの初期化
     TAILQ_INIT(&EVS_client_tailq);
-    printf("INFO  : %s(): TAILQ_INIT(&EVS_client_tailq): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INIT(&EVS_client_tailq): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     // タイマー用テールキューの初期化
     TAILQ_INIT(&EVS_timer_tailq);
-    printf("INFO  : %s(): TAILQ_INIT(&EVS_timer_tailq): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INIT(&EVS_timer_tailq): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // 各種設定値初期化処理
@@ -701,10 +792,86 @@ int INIT_all(int argc, char *argv[])
     init_result = INIT_config(argc, argv);
     if (init_result < 0)
     {
-        printf("ERROR : %s(): INIT_config(): Cannot initialize config!?\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_config(): Cannot initialize config!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return init_result;
     }
-    printf("INFO  : %s(): INIT_config(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_config(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+
+    // --------------------------------
+    // デーモン化処理
+    // --------------------------------
+    // // デーモンモードが1:ONなら
+    if (EVS_config.daemon)
+    {
+        // pidファイルの設定がないなら
+        if (EVS_config.pid_file == NULL)
+        {
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot find PID filename!?\n", __func__);
+            logging(LOGLEVEL_ERROR, log_str);
+            return -1;
+        }
+    }
+    // pidファイルを読み込みで開いてみる
+    pidfile_fd = open(EVS_config.pid_file, (O_RDONLY));
+    // pidファイルが開けてしまうなら
+    if (pidfile_fd != -1)
+    {
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Found other process PID file!? errno=%d (%s)\n", __func__, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
+        // PIDファイルを閉じる
+        close(pidfile_fd);
+        return -1;
+    }
+
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): daemon(0, 0): Go!\n", __func__);               // daemon(0, 0): を呼ぶ前にログを出力
+    logging(LOGLEVEL_INFO, log_str);
+    
+    // プロセスをdaemon()で子プロセスを生成する
+    init_result = daemon(0, 1);
+    // 子プロセスが生成できなかったら
+    if (init_result == -1)
+    {
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot daemonized new process!? errno=%d (%s)\n", __func__, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
+        return -1;
+    }
+    // 子プロセスが生成できたら
+    else if (init_result != 0)
+    {
+        // 親プロセスはここで終わり(実際にはここには来ないけど念のためexit(0)しといて、あとはデーモン化したプロセスに任せる)
+        logging(LOGLEVEL_INFO, "daemonized OK!!\n");                    // デーモン化した旨を出力
+        exit(0);
+    }
+
+    // --------------------------------
+    // PIDファイル処理
+    // --------------------------------
+    // PIDファイルを新規書き込みで開く
+    pidfile_fd = open(EVS_config.pid_file, (O_WRONLY | O_CREAT | O_APPEND), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+    // PIDファイルが開けなかったら
+    if (pidfile_fd == -1)
+    {
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot create PID file!? errno=%d (%s)\n", __func__, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
+        return -1;
+    }
+    // プロセスIDを取得
+    pid = getpid();
+    // プロセスID文字列を生成
+    snprintf(log_str, MAX_LOG_LENGTH, "%d\n", (int)getpid());
+    // PIDファイルにプロセスIDを書き出す
+    init_result = write(pidfile_fd, log_str, strlen(log_str) );
+    // PIDファイルにプロセスIDを書き出せなかったら
+    if (init_result != strlen(log_str))
+    {
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot write PID file!? init_result=%d!=%d errno=%d (%s)\n", __func__, init_result, strlen(log_str) + 1,errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
+        return -1;
+    }
+    // PIDファイルを閉じる
+    close(pidfile_fd);
 
     // --------------------------------
     // UNIXドメインソケット関連初期化処理
@@ -714,17 +881,20 @@ int INIT_all(int argc, char *argv[])
     // メモリ領域が確保できなかったら
     if (listen_port == NULL)
     {
-        printf("ERROR : %s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
+        logging(LOGLEVEL_ERROR, log_str);
         return -1;
     }
     listen_port->port = 0;                              // ポート番号を設定する(以下、念のため同様に)
     listen_port->ipv4 = 0;                              // IPv4フラグ(0:OFF、1:ON)に0(=OFF)を設定する
     listen_port->ipv6 = 0;                              // IPv6フラグ(0:OFF、1:ON)に0(=OFF)を設定する
     listen_port->ssl = 0;                               // SSL/TLSフラグ(0:OFF、1:ON)に1を設定する
-    printf("INFO  : %s(): UNIX Domain socket preparation.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): UNIX Domain socket preparation.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_port_tailq, listen_port, entries);
-    printf("INFO  : %s(): TAILQ_INSERT_TAIL(listen_port): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(listen_port): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // OpenSSL関連初期化処理
@@ -732,7 +902,8 @@ int INIT_all(int argc, char *argv[])
     // SSL/TLS対応しないなら
     if (EVS_config.ssl_support == 0)
     {
-        printf("INFO  : %s(): SSL/TLS not support by config.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): SSL/TLS not support by config.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
     }
     // SSL/TLS対応するなら
     else
@@ -741,10 +912,12 @@ int INIT_all(int argc, char *argv[])
         init_result = INIT_openssl();
         if (init_result == 0)                                // OpenSSL関連は、戻り値が0だとエラーなのでこの判定条件になる
         {
-            printf("ERROR : %s(): INIT_openssl(): Cannot initialize openssl etc...!?\n", __func__);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_openssl(): Cannot initialize openssl etc...!?\n", __func__);
+            logging(LOGLEVEL_ERROR, log_str);
             return -1;                                        // なので、ここでは0を返さず-1を返すのがいいだろう
         }
-        printf("INFO  : %s(): INIT_openssl(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_openssl(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
     }
     // あとはポート毎に、SSL/TLS対応するかどうかを設定する
 
@@ -754,10 +927,12 @@ int INIT_all(int argc, char *argv[])
     init_result = INIT_libev();
     if (init_result < 0)
     {
-        printf("ERROR : %s(): INIT_libev(): Cannot initialize libev etc...!?\n", __func__);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_libev(): Cannot initialize libev etc...!?\n", __func__);
+        logging(LOGLEVEL_ERROR, log_str);
         return init_result;
     }
-    printf("INFO  : %s(): INIT_libev(): OK.\n", __func__);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_libev(): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
 
     // --------------------------------
     // ポート別初期化処理 (getaddrinfo()を使う方法もあるが、どうせPF_UNIXは別処理しないといけないし、結局今回はポート別にsocket→bind→listenする)
@@ -769,10 +944,12 @@ int INIT_all(int argc, char *argv[])
         init_result = INIT_socket(listen_port);
         if (init_result < 0)
         {
-            printf("ERROR : %s(): INIT_socket(): Cannot initialize socket!?\n", __func__);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_socket(): Cannot initialize socket!?\n", __func__);
+            logging(LOGLEVEL_ERROR, log_str);
             return init_result;
         }
-        printf("INFO  : %s(): INIT_socket(port=%d): OK.\n", __func__, listen_port->port);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): INIT_socket(port=%d): OK.\n", __func__, listen_port->port);
+    logging(LOGLEVEL_INFO, log_str);
     }
 
     // --------------------------------
