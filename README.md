@@ -26,17 +26,30 @@ etc ...
 
 When dependencies are installed just run:
 
-	$ git clone https://github.com/disco-v8/EvServer.git
-	$ cd EvServer
+    1) Download and compile, link.
 
-	$ autoheader
-	$ aclocal
-	$ automake --add-missing --copy
-	$ autoconf
+    $ git clone https://github.com/disco-v8/EvServer.git
+    $ cd EvServer
 
-	$ make clean
-	$ ./configure --prefix=/usr
-	$ make
+    $ autoheader
+    $ aclocal
+    $ automake --add-missing --copy
+    $ autoconf
+
+    2) Make PID, SockFile, Log's directorys.
+
+    $ make clean
+    $ ./configure --prefix=/usr
+    $ make
+
+    $ mkdir /var/run/EvServer/
+    $ chown userid.groupid /var/run/EvServer/
+    $ mkdir /var/log/EvServer/
+    $ chown userid.groupid /var/log/EvServer/
+
+    3) Edit INI file, and run.
+    
+    $ ./evserver (./evserver.ini)
 
 Regards.
 
