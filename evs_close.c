@@ -49,7 +49,12 @@ void CLOSE_client(struct ev_loop* loop, struct ev_io *watcher, int revents)
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_stop(): OK.\n", __func__);
     logging(LOGLEVEL_INFO, log_str);
 
-    // テールキューからこの接続の情報を削除する
+    // タイマー用テールキューからこの接続の情報を削除する
+    TAILQ_REMOVE(&EVS_timer_tailq, (struct EVS_timer_t *)this_client->timeout_target, entries);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_timer_tailq): OK.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+
+    // クライアント用テールキューからこの接続の情報を削除する
     TAILQ_REMOVE(&EVS_client_tailq, this_client, entries);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_client_tailq): OK.\n", __func__);
     logging(LOGLEVEL_INFO, log_str);
