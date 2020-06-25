@@ -50,6 +50,7 @@ When dependencies are installed just run:
     3) Edit INI file, and run.
 
     $ ./evserver (./evserver.ini)
+    $ tail -F /var/log/EvServer/evserver.log
 
 Regards.
 
