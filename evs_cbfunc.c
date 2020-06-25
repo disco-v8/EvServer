@@ -277,33 +277,20 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
         return;
     }
 
-    // 受信したメッセージをとりあえず表示する
-    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): message len=%d, %s", __func__, this_client->socket_fd, msg_len, msg_buf);
-    logging(LOGLEVEL_INFO, log_str);
-
-/*
-    // 接続している他のクライアントに対して受信したメッセージを送信する
-    TAILQ_FOREACH (other_client, &EVS_client_tailq, entries)
+    // --------------------------------
+    // API関連
+    // --------------------------------
+    // API開始処理(クライアント別処理分岐、スレッド生成など)
+    socket_result = API_start(this_client, msg_buf, msg_len);
+    // APIの処理結果がエラー(!=0)だったら(切断処理をする)
+    if (socket_result != 0)
     {
-        // その他のクライアントなら(クライアント用テールキューをすべてなめているので、メッセージを送ってきたクライアントには送信しない)
-        if (other_client != this_client)
-        {
-            // ----------------
-            // ソケット送信(send : ソケットのファイルディスクリプタに対して、msg_bufからmsg_lenのメッセージを送信する。(ノンブロッキングにするなら0ではなくてMSG_DONTWAIT)
-            // ----------------
-            socket_result = send(other_client->socket_fd, (void*)msg_buf, msg_len, 0);
-            // 送信したバイト数が負(<0)だったら(エラーです)
-            if (socket_result < 0)
-            {
-                snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(fd=%d): Cannot send message? errno=%d (%s)\n", __func__, this_client->socket_fd, other_client->socket_fd, errno, strerror(errno));
-                logging(LOGLEVEL_ERROR, log_str);
-                return;
-            }
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(fd=%d): OK.\n", __func__, this_client->socket_fd, other_client->socket_fd);
-            logging(LOGLEVEL_INFO, log_str);
-        }
+        // ----------------
+        // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
+        // ----------------
+        CLOSE_client(loop, (struct ev_io *)this_client, revents);
+        return;
     }
-*/
 }
 
 // --------------------------------
@@ -360,6 +347,7 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
         {
             snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): Cannot get new SSL structure!? %s\n", __func__, server_watcher->socket_fd, ERR_reason_error_string(ERR_get_error()));
             logging(LOGLEVEL_ERROR, log_str);
+            free(client_watcher);
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
@@ -374,6 +362,7 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
             // ここでもソケットをクローズをしたほうがいいかな？それともソケットを再設定したほうがいいかな？
             snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): Cannot SSL socket binding!? %s\n", __func__, server_watcher->socket_fd, socket_result, ERR_reason_error_string(ERR_get_error()));
             logging(LOGLEVEL_ERROR, log_str);
+            free(client_watcher);
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
@@ -406,6 +395,7 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
         {
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
             logging(LOGLEVEL_ERROR, log_str);
+            free(client_watcher);
             return;
         }
 
@@ -424,17 +414,25 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
     client_watcher->socket_fd = socket_result;                                                                      // ディスクリプタを設定する
+    getpeername(client_watcher->socket_fd, (struct sockaddr *)&client_sockaddr_in6, &client_sockaddr_len);          // クライアントのアドレス情報を取得しなおす(し直さないと、IPv6でのローカル接続時に惑わされることになるョ)
     memcpy((void *)&client_watcher->socket_address.sa_ipv6, (void *)&client_sockaddr_in6, client_sockaddr_len);     // アドレス構造体を設定する
+
+    // クライアントのアドレスを文字列として格納
+    inet_ntop(PF_INET6, (void *)&client_watcher->socket_address.sa_ipv6.sin6_addr, client_watcher->addr_str, sizeof(client_watcher->addr_str));
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): inet_ntop(PF_INET6): Client address=%s\n", __func__, client_watcher->addr_str);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // クライアントとの接続ソケットをノンブロッキングモードにする
     // ----------------
     socket_result = ioctl(client_watcher->socket_fd, FIONBIO, &nonblocking_flag);
-    // メモリ領域が確保できなかったら
+    // ノンブロッキングモードにできなかったら
     if (socket_result < 0)
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
         logging(LOGLEVEL_ERROR, log_str);
+        free(client_watcher);
+        free(timeout_watcher);
         return;
     }
 
@@ -508,6 +506,7 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
         {
             snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): Cannot get new SSL structure!? %s\n", __func__, server_watcher->socket_fd, ERR_reason_error_string(ERR_get_error()));
             logging(LOGLEVEL_ERROR, log_str);
+            free(client_watcher);
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
@@ -522,6 +521,7 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
             // ここでもソケットをクローズをしたほうがいいかな？それともソケットを再設定したほうがいいかな？
             snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): Cannot SSL socket binding!? %s\n", __func__, server_watcher->socket_fd, socket_result, ERR_reason_error_string(ERR_get_error()));
             logging(LOGLEVEL_ERROR, log_str);
+            free(client_watcher);
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
@@ -554,6 +554,7 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
         {
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
             logging(LOGLEVEL_ERROR, log_str);
+            free(client_watcher);
             return;
         }
 
@@ -572,17 +573,25 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
     client_watcher->socket_fd = socket_result;                                                                      // ディスクリプタを設定する
+    getpeername(client_watcher->socket_fd, (struct sockaddr *)&client_sockaddr_in, &client_sockaddr_len);           // クライアントのアドレス情報を取得しなおす(し直さないと、IPv6でのローカル接続時に惑わされることになるョ。IPv4ではしなくてもいい気もするが…)
     memcpy((void *)&client_watcher->socket_address.sa_ipv4, (void *)&client_sockaddr_in, client_sockaddr_len);      // アドレス構造体を設定する
+
+    // クライアントのアドレスを文字列として格納
+    inet_ntop(PF_INET, (void *)&client_watcher->socket_address.sa_ipv4.sin_addr, client_watcher->addr_str, sizeof(client_watcher->addr_str));
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): inet_ntop(PF_INET): Client address=%s\n", __func__, client_watcher->addr_str);
+    logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
     // クライアントとの接続ソケットをノンブロッキングモードにする
     // ----------------
     socket_result = ioctl(client_watcher->socket_fd, FIONBIO, &nonblocking_flag);
-    // メモリ領域が確保できなかったら
+    // ノンブロッキングモードにできなかったら
     if (socket_result < 0)
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
         logging(LOGLEVEL_ERROR, log_str);
+        free(client_watcher);
+        free(timeout_watcher);
         return;
     }
 
@@ -656,6 +665,7 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
         {
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
             logging(LOGLEVEL_ERROR, log_str);
+            free(client_watcher);
             return;
         }
 
@@ -675,6 +685,11 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
     client_watcher->socket_fd = socket_result;                                                                  // ディスクリプタを設定する
     memcpy((void *)&client_watcher->socket_address.sa_un, (void *)&client_sockaddr_un, client_sockaddr_len);    // アドレス構造体を設定する
+
+    // アドレスを文字列として格納
+    strcpy(client_watcher->addr_str, "UNIX DOMAIN SOCKET");
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): inet_ntop(PF_UNIX): Client address=%s\n", __func__, client_watcher->addr_str);
+    logging(LOGLEVEL_INFO, log_str);
 
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_client_tailq, client_watcher, entries);
