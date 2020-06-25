@@ -37,6 +37,8 @@
 #include <netinet/in.h>                                     // IPv4関連
 #include <netinet/tcp.h>                                    // TCP関連
 
+//#include <arpa/inet.h>                                      // アドレス変換関連
+
 #include <openssl/ssl.h>                                    // OpenSSL関連
 #include <openssl/err.h>                                    // OpenSSL関連
 #include <openssl/crypto.h>                                 // OpenSSL関連
@@ -48,8 +50,8 @@
 // --------------------------------
 // 定数宣言
 // --------------------------------
-#define MAX_STRING_LENGTH   8192                            // 設定ファイル中とかの、一行当たりの最大文字数
-#define MAX_LOG_LENGTH      1024                            // ログの、一行当たりの最大文字数
+#define MAX_STRING_LENGTH   1024                            // 設定ファイル中とかの、一行当たりの最大文字数
+#define MAX_LOG_LENGTH      512                             // ログの、一行当たりの最大文字数
 #define MAX_MESSAGE_LENGTH  8192                            // ソケット通信時の、一メッセージ当たりの最大文字数
 
 #define MAX_PF_NUM          16                              // 対応するプロトコルファミリーの最大数(PF_KEYまで…実際にはPF_UNIX、PF_INET、PF_INET6しか扱わない)
@@ -122,6 +124,7 @@ struct EVS_ev_client_t {                                    // コールバッ�
         struct sockaddr_un  sa_un;                          //  UNIXドメイン用ソケットアドレス構造体
         struct sockaddr     sa;                             //  ソケットアドレス構造体
     } socket_address;
+    char    addr_str[64];                                   // アドレスを文字列として格納する(UNIX DOMAIN SOCKET/xxx.xxx.xxx.xxx(IPv4)/xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx(IPv6))
     TAILQ_ENTRY (EVS_ev_client_t) entries;                  // 次のTAILQ構造体への接続 → man3/queue.3.html
 };
 
@@ -176,9 +179,13 @@ extern int                              EVS_log_fd;                     // ロ�
 // プロトタイプ宣言
 // --------------------------------
 extern void logging(int, char *);                                       // ログ出力処理
+
 extern int INIT_all(int, char *[]);                                     // 初期化処理
-extern void CLOSE_client(struct ev_loop*, struct ev_io *, int);         // クライアント接続終了処理
+
+extern void CLOSE_client(struct ev_loop *, struct ev_io *, int);        // クライアント接続終了処理
 extern int CLOSE_all(void);                                             // 終了処理
+
+extern int API_start(struct EVS_ev_client_t *, char *, ssize_t);        // API開始処理(クライアント別処理分岐、スレッド生成など)
 
 // ----------------
 // テールキュー関連
