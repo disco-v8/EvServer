@@ -1,7 +1,7 @@
 EvServer
 =========
 
-EvServer is the basic skeleton of a server program that uses libev and OpenSSL. Written in C language.
+EvServer is the basic skeleton codes of a server program that uses libev and OpenSSL. Written in C language.
 
 Sources, bug tracking: <https://github.com/disco-v8/EvServer>
 
