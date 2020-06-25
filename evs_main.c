@@ -16,6 +16,8 @@
 //     0.0.10 No-communication timer
 //     0.0.11 Bug fix free() and ?alloc() parameter.
 //     0.0.12 Daemon mode support.
+//     0.0.13 Client Address support.
+//     0.0.14 pthread support.
 //     0.x.x  Added API for upper module. (TBD)
 //     0.x.x  Added PostgreSQL module. (TBD)
 //     0.x.x  Added PostgreSQL module. (TBD)
