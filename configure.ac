@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT(EvServer, 0.0.10, mail@kabu.direct)
+AC_INIT(EvServer, 0.0.14, mail@kabu.direct)
 AM_INIT_AUTOMAKE([foreign])
 AC_CONFIG_SRCDIR([evs_close.c])
 AC_CONFIG_HEADERS([config.h])
@@ -29,6 +29,11 @@ AC_CHECK_HEADER(/usr/include/openssl/crypto.h,
         LIBCRYPTO_LIB='-lcrypto',
         AC_MSG_WARN(*** Openssl/crypto header files not found ***))
 AC_SUBST(LIBCRYPTO_LIB)
+
+AC_CHECK_HEADER(/usr/include/pthread.h,
+        LIBPTHREAD_LIB='-pthread',
+        AC_MSG_WARN(*** pthread header files not found ***))
+AC_SUBST(LIBPTHREAD_LIB)
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SSIZE_T
