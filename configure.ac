@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT(EvServer, 0.0.14, mail@kabu.direct)
+AC_INIT(EvServer, 0.0.15, mail@kabu.direct)
 AM_INIT_AUTOMAKE([foreign])
 AC_CONFIG_SRCDIR([evs_close.c])
 AC_CONFIG_HEADERS([config.h])
