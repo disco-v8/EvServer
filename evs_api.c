@@ -55,35 +55,61 @@ void *API_print(void *arg)
     snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): message len=%d, %s", __func__, thread_arg->client->socket_fd, thread_arg->msg_len, thread_arg->msg_buf);
     logging(LOGLEVEL_INFO, log_str);
 
-    // スレッド処理終了(exitでもいいけど、デタッチ状態で生成しているから、returnしたらexitと同様)
-    return;
-/*
     int                             socket_result;
     struct EVS_ev_client_t          *other_client;                                      // ev_io＋ソケットファイルディスクリプタ＋次のTAILQ構造体への接続とした拡張構造体
     struct EVS_ev_client_t          *this_client = thread_arg->client;                  // libevから渡されたwatcherポインタを、本来の拡張構造体ポインタとして変換する
 
-    // 接続している他のクライアントに対して受信したメッセージを送信する
-    TAILQ_FOREACH (other_client, &EVS_client_tailq, entries)
+    // ----------------
+    // 非SSL通信(=0)なら
+    // ----------------
+    if (this_client->ssl_status == 0)
     {
-        // その他のクライアントなら(クライアント用テールキューをすべてなめているので、メッセージを送ってきたクライアントには送信しない)
-        if (other_client != this_client)
+        // ----------------
+        // ソケット送信(send : ソケットのファイルディスクリプタに対して、msg_bufからmsg_lenのメッセージを送信する。(ノンブロッキングにするなら0ではなくてMSG_DONTWAIT)
+        // ----------------
+        socket_result = send(this_client->socket_fd, (void*)thread_arg->msg_buf, thread_arg->msg_len, 0);
+        // 送信したバイト数が負(<0)だったら(エラーです)
+        if (socket_result < 0)
         {
-            // ----------------
-            // ソケット送信(send : ソケットのファイルディスクリプタに対して、msg_bufからmsg_lenのメッセージを送信する。(ノンブロッキングにするなら0ではなくてMSG_DONTWAIT)
-            // ----------------
-            socket_result = send(other_client->socket_fd, (void*)thread_arg->msg_buf, thread_arg->msg_len, 0);
-            // 送信したバイト数が負(<0)だったら(エラーです)
-            if (socket_result < 0)
-            {
-                snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(fd=%d): Cannot send message? errno=%d (%s)\n", __func__, this_client->socket_fd, other_client->socket_fd, errno, strerror(errno));
-                logging(LOGLEVEL_ERROR, log_str);
-                return;
-            }
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(fd=%d): OK.\n", __func__, this_client->socket_fd, other_client->socket_fd);
-            logging(LOGLEVEL_INFO, log_str);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(): Cannot send message? errno=%d (%s)\n", __func__, this_client->socket_fd, errno, strerror(errno));
+            logging(LOGLEVEL_ERROR, log_str);
+            return;
         }
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): send(): OK.\n", __func__, this_client->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
     }
-*/
+    // ----------------
+    // SSLハンドシェイク前なら
+    // ----------------
+    else if (this_client->ssl_status == 1)
+    {
+        // ERROR!?!? (TBD)
+    }
+    // ----------------
+    // SSL接続中なら
+    // ----------------
+    else if (this_client->ssl_status == 2)
+    {
+        // ----------------
+        // OpenSSL(SSL_write : SSLデータ書き込み)
+        // ----------------
+        socket_result = SSL_write(this_client->ssl, (void*)thread_arg->msg_buf, thread_arg->msg_len);
+        // 送信したバイト数が負(<0)だったら(エラーです)
+        if (socket_result < 0)
+        {
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_write(): Cannot write encrypted message!?\n", __func__, this_client->socket_fd, ERR_reason_error_string(ERR_get_error()));
+            logging(LOGLEVEL_ERROR, log_str);
+            return;
+        }
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_write(): OK.\n", __func__, this_client->socket_fd);
+        logging(LOGLEVEL_INFO, log_str);
+    }
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): PTHREAD DETACHED.\n", __func__);
+    logging(LOGLEVEL_INFO, log_str);
+
+    // スレッド処理終了(exitでもいいけど、デタッチ状態で生成しているから、returnしたらexitと同様)
+    return;
+
 }
 
 // --------------------------------
@@ -97,6 +123,10 @@ int API_start(struct EVS_ev_client_t *client, char *msg_buf, ssize_t msg_len)
     pthread_t                       thread_id;                          // スレッド識別変数
     pthread_attr_t                  thread_attr;
     struct EVS_api_t                thread_arg;                         // APIのpthread用に必要な変数をまとめた構造体
+
+    // とりあえず表示する
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): OK!\n", __func__, client->socket_fd);
+    logging(LOGLEVEL_INFO, log_str);
 
     // スレッド属性を初期化
     api_result = pthread_attr_init(&thread_attr);
@@ -131,7 +161,7 @@ int API_start(struct EVS_ev_client_t *client, char *msg_buf, ssize_t msg_len)
         case API_CHAT     :
             break;
 */
-        default            :
+        default            :    // シンプルにクライアントにエコーバックします
             // 通常出力処理スレッドを生成(スレッドはデタッチ状態で生成するのでpthread_join()する必要がない
             api_result = pthread_create(&thread_id, &thread_attr, &API_print, &thread_arg);
     }
@@ -143,6 +173,8 @@ int API_start(struct EVS_ev_client_t *client, char *msg_buf, ssize_t msg_len)
         logging(LOGLEVEL_ERROR, log_str);
         return api_result;
     }
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): pthread_create(): OK!!!!\n", __func__, client->ssl_status, errno, strerror(errno));
+    logging(LOGLEVEL_INFO, log_str);
 
     // 戻る(実際にはスレッド生成して戻っているだけ)
     return 0;
