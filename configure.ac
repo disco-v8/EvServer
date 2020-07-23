@@ -30,11 +30,6 @@ AC_CHECK_HEADER(/usr/include/openssl/crypto.h,
         AC_MSG_WARN(*** Openssl/crypto header files not found ***))
 AC_SUBST(LIBCRYPTO_LIB)
 
-AC_CHECK_HEADER(/usr/include/pthread.h,
-        LIBPTHREAD_LIB='-pthread',
-        AC_MSG_WARN(*** pthread header files not found ***))
-AC_SUBST(LIBPTHREAD_LIB)
-
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SSIZE_T
 
