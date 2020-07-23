@@ -1,7 +1,7 @@
 // ----------------------------------------------------------------------
 // EvServer - Libev Server (Sample) -
 // Purpose:
-//     Various initialization processing.
+//     Various closing processing.
 //
 // Program:
 //     Takeshi Kaburagi/MyDNS.JP    disco-v8@4x4.jp
@@ -24,6 +24,10 @@
 #include "evs_main.h"
 
 // --------------------------------
+// 定数宣言
+// --------------------------------
+
+// --------------------------------
 // 型宣言
 // --------------------------------
 
@@ -40,24 +44,25 @@
 void CLOSE_client(struct ev_loop* loop, struct ev_io *watcher, int revents)
 {
     int                             socket_result;
-    struct EVS_ev_client_t          *this_client = (struct EVS_ev_client_t *)watcher;   // libevから渡されたwatcherポインタを、本来の拡張構造体ポインタとして変換する
-
     char                            log_str[MAX_LOG_LENGTH];
+
+    struct EVS_ev_client_t          *this_client = (struct EVS_ev_client_t *)watcher;   // libevから渡されたwatcherポインタを、本来の拡張構造体ポインタとして変換する
 
     // この接続のイベントを停止する
     ev_io_stop(loop, &this_client->io_watcher);
-    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_stop(): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
-
-    // タイマー用テールキューからこの接続の情報を削除する
-    TAILQ_REMOVE(&EVS_timer_tailq, (struct EVS_timer_t *)this_client->timeout_target, entries);
-    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_timer_tailq): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): ev_io_stop(): OK.\n", __func__, this_client->socket_fd);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // クライアント用テールキューからこの接続の情報を削除する
     TAILQ_REMOVE(&EVS_client_tailq, this_client, entries);
-    snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_client_tailq): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): TAILQ_REMOVE(EVS_client_tailq): OK.\n", __func__, this_client->socket_fd);
+    logging(LOGLEVEL_DEBUG, log_str);
+
+    // クライアント毎のリクエストヘッダが確保されているなら
+    if (this_client->request_buf != NULL)
+    {
+        free(this_client->request_buf);
+    }
 
     // SSLハンドシェイク前、もしくはSSL接続中なら
     if (this_client->ssl_status != 0)
@@ -67,7 +72,7 @@ void CLOSE_client(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // ----------------
         SSL_free(this_client->ssl);
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_free(): OK.\n", __func__, this_client->socket_fd);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
 
     // この接続のソケットを閉じる
@@ -94,12 +99,12 @@ void CLOSE_client(struct ev_loop* loop, struct ev_io *watcher, int revents)
 int CLOSE_all(void)
 {
     int                             close_result;
+    char                            log_str[MAX_LOG_LENGTH];
+
     struct EVS_ev_client_t          *client_watcher;                    // クライアント別設定用構造体ポインタ
     struct EVS_ev_server_t          *server_watcher;                    // サーバー別設定用構造体ポインタ
     struct EVS_timer_t              *timeout_watcher;                   // タイマー別構造体ポインタ
     struct EVS_port_t               *listen_port;                       // ポート別設定用構造体ポインタ
-
-    char                            log_str[MAX_LOG_LENGTH];
 
     // --------------------------------
     // クライアント別クローズ処理
@@ -129,8 +134,7 @@ int CLOSE_all(void)
         free(client_watcher);
     }
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_client_tailq): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
-
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // --------------------------------
     // サーバー別クローズ処理
@@ -162,7 +166,7 @@ int CLOSE_all(void)
                 return -1;
             }
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): unlink(%s): OK.\n", __func__, server_watcher->socket_address.sa_un.sun_path);
-            logging(LOGLEVEL_INFO, log_str);
+            logging(LOGLEVEL_DEBUG, log_str);
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): close(fd=%d): OK.\n", __func__, server_watcher->socket_fd);
         logging(LOGLEVEL_INFO, log_str);
@@ -175,7 +179,7 @@ int CLOSE_all(void)
         free(server_watcher);
     }
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_server_tailq): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // --------------------------------
     // ポート別クローズ処理
@@ -188,7 +192,7 @@ int CLOSE_all(void)
         free(listen_port);
     }
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_port_tailq): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // --------------------------------
     // libev関連終了処理 ※タイマー用に確保したメモリ領域のfree()を忘れずに
@@ -201,7 +205,7 @@ int CLOSE_all(void)
         free(timeout_watcher);
     }
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_REMOVE(EVS_timer_tailq): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // --------------------------------
     // 各種設定関連終了処理 ※設定用に確保した文字列のメモリ領域のfree()を忘れずに
@@ -233,10 +237,12 @@ int CLOSE_all(void)
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): unlink(%s): Cannot unlink? errno=%d (%s)\n", __func__, EVS_config.pid_file, errno, strerror(errno));
         logging(LOGLEVEL_ERROR, log_str);
+        free(EVS_config.pid_file);
         return -1;
     }
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): unlink(%s): OK.\n", __func__, EVS_config.pid_file);
     logging(LOGLEVEL_INFO, log_str);
+    free(EVS_config.pid_file);
 
     // 戻る
     return close_result;
