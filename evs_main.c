@@ -18,11 +18,14 @@
 //     0.0.12 Daemon mode support.
 //     0.0.13 Client Address support.
 //     0.0.14 pthread support.
-//     0.x.x  Added API for upper module. (TBD)
+//     0.0.15 pthread removed. Changed timeout judgment of Socket to idle event.
+//     *Later versions have moved to another project!*
+//     0.x.x  Added API for upper module.
+//     0.x.x  Added HTTP module. (Evs+FastCGI)
+//     0.x.x  Added HTTPS module. (Evs+FastCGI)
+//     0.x.x  Added FCGI module. (Evs+FastCGI)
 //     0.x.x  Added PostgreSQL module. (TBD)
 //     0.x.x  Added PostgreSQL module. (TBD)
-//     0.x.x  Added HTTP module. (TBD)
-//     0.x.x  Added HTTPS module. (TBD)
 //     0.x.x  Added OREORE module. (TBD)
 //
 // Program:
@@ -44,6 +47,10 @@
 #endif
 
 #include "evs_main.h"
+
+// --------------------------------
+// 定数宣言
+// --------------------------------
 
 // --------------------------------
 // 型宣言
@@ -69,22 +76,26 @@ void logging(int level, char * logstr)
     }
     else
     {
-        // ログファイル名の指定があるのにログファイルが開いていなければ
-        if (EVS_config.log_file != NULL && EVS_log_fd == 0)
+        // ログレベルがINFOよりも大きかったら
+        if (level >= EVS_config.log_level)
         {
-            // ログファイルを書き込みで開く
-            EVS_log_fd = open(EVS_config.log_file, (O_WRONLY | O_CREAT | O_APPEND), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
-        }
-        // ログファイルが開けていないなら
-        if (EVS_log_fd == 0 || EVS_log_fd == -1)
-        {
-            // 標準出力
-            printf("%s : %s", loglevel_list[level], logstr);
-        }
-        else
-        {
-            // ログファイルに出力
-            write(EVS_log_fd, logstr, strlen(logstr));
+            // ログファイル名の指定があるのにログファイルが開いていなければ
+            if (EVS_config.log_file != NULL && EVS_log_fd == 0)
+            {
+                // ログファイルを書き込みで開く(ノンブロッキングにするなら「 | O_NONBLOCK」を追加)
+                EVS_log_fd = open(EVS_config.log_file, (O_WRONLY | O_CREAT | O_APPEND), (S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+            }
+            // ログファイルが開けていないなら
+            if (EVS_log_fd == 0 || EVS_log_fd == -1)
+            {
+                // 標準出力
+                printf("%s : %s", loglevel_list[level], logstr);
+            }
+            else
+            {
+                // ログファイルに出力
+                write(EVS_log_fd, logstr, strlen(logstr));
+            }
         }
     }
 }
@@ -125,6 +136,9 @@ int main (int argc, char *argv[])
     CLOSE_all();
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): CLOSE_all(): Go!\n", __func__);                // daemon(0, 0): を呼ぶ前にログを出力
     logging(LOGLEVEL_INFO, log_str);
+
+    // ログファイル名の領域を最後に解放
+    free(EVS_config.log_file);
 
     return 0;
 }
