@@ -1,7 +1,7 @@
 // ----------------------------------------------------------------------
 // EvServer - Libev Server (Sample) -
 // Purpose:
-//     Various initialization processing.
+//     Callback processing when an event occurs by libev.
 //
 // Program:
 //     Takeshi Kaburagi/MyDNS.JP    disco-v8@4x4.jp
@@ -21,12 +21,18 @@
 // --------------------------------
 
 // --------------------------------
+// 定数宣言
+// --------------------------------
+#define EVS_idle_check_interval     0.3                     // アイドルイベント時のタイムアウトチェック間隔
+
+// --------------------------------
 // 型宣言
 // --------------------------------
 
 // --------------------------------
 // 変数宣言
 // --------------------------------
+ev_tstamp   EVS_idle_lasttime = 0.;                                     // 最終アイドルチェック日時
 
 // ----------------------------------------------------------------------
 // コード部分
@@ -94,51 +100,90 @@ static void CB_sigterm(struct ev_loop* loop, struct ev_signal *watcher, int reve
     ev_break(loop, EVBREAK_ALL);
 }
 
+// --------------------------------
+// アイドルイベント処理のコールバック処理
+// --------------------------------
+static void CB_idle_socket(struct ev_loop* loop, struct ev_idle *watcher, int revents)
+{
+    char                            log_str[MAX_LOG_LENGTH];
+
+    struct EVS_ev_server_t          *server_watcher = (struct EVS_ev_server_t *)watcher;        // サーバー別設定用構造体ポインタ
+    struct EVS_ev_client_t          *client_watcher;                                            // クライアント別設定用構造体ポインタ
+    ev_tstamp                       after_time;                                                 // 無通信タイマーの経過時間(最終アクティブ日時 - 現在日時 + タイムアウト)
+
+    // --------------------------------
+    // アイドル時に毎回毎回クライアントとの接続について処理するのはアホなので、0.3秒以上経過したらに検査するようにする。
+    // --------------------------------
+    if ((EVS_idle_lasttime - ev_now(loop) + EVS_idle_check_interval) < 0)
+    {
+        // --------------------------------
+        // FCGI別クローズ処理
+        // --------------------------------
+
+        // FCGIの接続キューをスキャンして、無通信タイマーの経過時間がすでにタイムアウトしていたら閉じるようにしよう。
+
+        // --------------------------------
+        // クライアント別クローズ処理
+        // --------------------------------
+        // クライアント用テールキューからポート情報を取得して全て処理
+        TAILQ_FOREACH (client_watcher, &EVS_client_tailq, entries)
+        {
+            // 無通信タイマーの経過時間がすでにタイムアウトしていたら
+            if ((client_watcher->last_activity + EVS_config.nocommunication_timeout) < ev_now(loop))
+            {
+                snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Timeout!!!\n", __func__, client_watcher->socket_fd);
+                logging(LOGLEVEL_WARN, log_str);
+                // ----------------
+                // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
+                // ----------------
+                CLOSE_client(loop, (struct ev_io *)client_watcher, revents);
+            }
+        }
+        // イベントループの日時を現在の日時に更新
+        ev_now_update(loop);
+        // 最終アイドルチェック日時を更新
+        EVS_idle_lasttime = ev_now(loop);
+    }
+    // 対象ウォッチャーのI/Oイベント監視を再開する
+    ev_io_start(loop, &server_watcher->io_watcher);
+}
+
 // ----------------
-// タイムアウトのコールバック処理
+// タイマーイベントのコールバック処理
 // ----------------
 static void CB_timeout(struct ev_loop* loop, struct ev_timer *watcher, int revents)
 {
-    struct EVS_timer_t              *this_timeout;
-    struct EVS_ev_client_t          *this_client;
-    ev_tstamp                       after_time;                         // タイマーの経過時間(最終アクティブ日時 - 現在日時 + タイムアウト)
     char                            log_str[MAX_LOG_LENGTH];
+
+    struct EVS_timer_t              *this_timeout;                      // タイマー別構造体ポインタ
+    ev_tstamp                       nowtime = 0.;                       // 最終アイドルチェック日時
     
-    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timeout check start!\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    // イベントループの日時を現在の日時に更新
+    ev_now_update(loop);
+    nowtime = ev_now(loop);
+
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timeout check start! ev_now=%.0f\n", __func__, nowtime);
+    logging(LOGLEVEL_DEBUG, log_str);
+
     // タイマー用テールキューに登録されているタイマーを確認
     TAILQ_FOREACH (this_timeout, &EVS_timer_tailq, entries)
     {
-        // タイマー用キューのクライアント接続構造体のポインタを変換する
-        this_client = (struct EVS_ev_client_t *)this_timeout->client_target;
-        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): last_activity=%f, timeout=%f, ev_now=%f\n", __func__, this_client->socket_fd, this_client->last_activity, this_timeout->timeout, ev_now(loop));
-        logging(LOGLEVEL_INFO, log_str);
-        // 該当タイマーの経過時間を算出する
-        after_time = this_client->last_activity - ev_now(loop) + this_timeout->timeout;
         // 該当タイマーがすでにタイムアウトしていたら
-        if (after_time < 0)
+        if (ev_now(loop) > this_timeout->timeout)
         {
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Timeout!!!\n", __func__, this_client->socket_fd);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Timeout!!!\n", __func__);
             logging(LOGLEVEL_WARN, log_str);
-            // テールキューからこの接続の情報を削除する
-            TAILQ_REMOVE(&EVS_timer_tailq, this_timeout, entries);
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): TAILQ_REMOVE(EVS_timer_tailq): OK.\n", __func__, this_client->socket_fd);
-            logging(LOGLEVEL_WARN, log_str);
-            // ----------------
-            // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
-            // ----------------
-            CLOSE_client(loop, (struct ev_io *)this_client, revents);
         }
         else
         {
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Not Timeout!?\n", __func__, this_client->socket_fd);
-            logging(LOGLEVEL_INFO, log_str);
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Not Timeout!?\n", __func__);
+            logging(LOGLEVEL_DEBUG, log_str);
         }
     }
     // ----------------
-    // タイマーオブジェクトに対して、タイムアウト確認間隔(timeout_checkintval秒)、そして繰り返し回数(0回)を設定する(つまり次のタイマーを設定している)
+    // タイマーオブジェクトに対して、タイムアウト確認間隔(timer_checkintval秒)、そして繰り返し回数(0回)を設定する(つまり次のタイマーを設定している)
     // ----------------
-    ev_timer_set(&timeout_watcher, EVS_config.timeout_checkintval, 0);              // ※&timeout_watcherの代わりに&watcherとしても同じこと
+    ev_timer_set(&timeout_watcher, EVS_config.timer_checkintval, 0);    // ※&timeout_watcherの代わりに&watcherとしても同じこと
     ev_timer_start(loop, &timeout_watcher);
 }
 
@@ -148,6 +193,7 @@ static void CB_timeout(struct ev_loop* loop, struct ev_timer *watcher, int reven
 static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
 {
     int                             socket_result;
+    char                            log_str[MAX_LOG_LENGTH];
 
     struct EVS_ev_client_t          *other_client;                                      // ev_io＋ソケットファイルディスクリプタ＋次のTAILQ構造体への接続とした拡張構造体
     struct EVS_ev_client_t          *this_client = (struct EVS_ev_client_t *)watcher;   // libevから渡されたwatcherポインタを、本来の拡張構造体ポインタとして変換する
@@ -155,7 +201,6 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
     char                            msg_buf[MAX_MESSAGE_LENGTH];
     ssize_t                         msg_len = 0;
 
-    char                            log_str[MAX_LOG_LENGTH];
 
     // イベントにエラーフラグが含まれていたら
     if (EV_ERROR & revents)
@@ -169,12 +214,25 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
     logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
+    // アイドルイベント開始処理
+    // ----------------
+    // ev_idle_start()自体は、accept()とrecv()系イベントで呼び出す
+    ev_idle_start(loop, &idle_socket_watcher);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_start(idle_socket_watcher): OK.\n", __func__);
+    logging(LOGLEVEL_DEBUG, log_str);
+
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): OK. ssl_status=%d\n", __func__, this_client->socket_fd, this_client->ssl_status);
+    logging(LOGLEVEL_DEBUG, log_str);
+
+    // ----------------
     // 無通信タイムアウトチェックをする(=1:有効)なら
     // ----------------
     if (EVS_config.nocommunication_check == 1)
     {
         ev_now_update(loop);                                            // イベントループの日時を現在の日時に更新
-        this_client->last_activity = ev_now(loop);                      // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
+        this_client->last_activity = ev_now(loop);                      // 最終アクティブ日時(監視対象が最後にアクティブとなった日時)を設定する
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): last_activity=%.0f\n", __func__, this_client->socket_fd, this_client->last_activity);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
 
     // ----------------
@@ -183,14 +241,25 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
     if (this_client->ssl_status == 0)
     {
         // ----------------
-        // ソケット受信(recv : ソケットのファイルディスクリプタから、msg_bufに最大sizeof(msg_buf)だけメッセージを受信する。(ノンブロッキングにするなら0ではなくてMSG_DONTWAIT)
+        // ソケット受信(recv : ソケットのファイルディスクリプタから、msg_bufに最大MAX_MESSAGE_LENGTH-1だけメッセージを受信する。(ノンブロッキングにするなら0ではなくてMSG_DONTWAIT)
         // ----------------
-        socket_result = recv(this_client->socket_fd, (void *)msg_buf, sizeof(msg_buf), 0);
+        socket_result = recv(this_client->socket_fd, (void *)msg_buf, sizeof(msg_buf) - 1, 0);
         // 読み込めたメッセージ量が負(<0)だったら(エラーです)
         if (socket_result < 0)
         {
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot recv message? errno=%d (%s)\n", __func__, errno, strerror(errno));
             logging(LOGLEVEL_ERROR, log_str);
+            return;
+        }
+        // 読み込めたメッセージ量が0だったら(切断処理をする)
+        else if (socket_result == 0)
+        {
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): socket_result == 0.\n", __func__, this_client->socket_fd);
+            logging(LOGLEVEL_DEBUG, log_str);
+            // ----------------
+            // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
+            // ----------------
+            CLOSE_client(loop, (struct ev_io *)this_client, revents);
             return;
         }
     }
@@ -204,11 +273,11 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // ----------------
         socket_result = SSL_accept(this_client->ssl);
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_accept(): socket_result=%d.\n", __func__, this_client->socket_fd, socket_result);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         // SSL/TLSハンドシェイクの結果コードを取得
         socket_result = SSL_get_error(this_client->ssl, socket_result);
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_get_error(): socket_result=%d.\n", __func__, this_client->socket_fd, socket_result);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
 
         // SSL/TLSハンドシェイクの結果コード別処理分岐
         switch (socket_result)
@@ -218,7 +287,7 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
                 // SSL接続中に設定
                 this_client->ssl_status = 2;
                 snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL/TLS handshake OK.\n", __func__, this_client->socket_fd);
-                logging(LOGLEVEL_INFO, log_str);
+                logging(LOGLEVEL_DEBUG, log_str);
                 break;
             case SSL_ERROR_SSL :
             case SSL_ERROR_SYSCALL :
@@ -261,15 +330,36 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
             CLOSE_client(loop, (struct ev_io *)this_client, revents);
             return;
         }
+        // 読み込めたメッセージ量が0だったら(切断処理をする)
+        if (socket_result == 0)
+        {
+            snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): socket_result == 0.\n", __func__, this_client->socket_fd);
+            logging(LOGLEVEL_DEBUG, log_str);
+            // ----------------
+            // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
+            // ----------------
+            CLOSE_client(loop, (struct ev_io *)this_client, revents);
+            return;
+        }
     }
-
     // メッセージ長を設定する(メッセージの終端に'\0'(!=NULL)を設定してはっきりとさせておく)
     msg_len = socket_result;
     msg_buf[msg_len] = '\0';
 
-    // 読み込めたメッセージ量が0だったら(切断処理をする)
-    if (msg_len == 0)
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Recieved msg_len=%d.\n", __func__, this_client->socket_fd, msg_len);
+    logging(LOGLEVEL_DEBUG, log_str);
+
+    // --------------------------------
+    // API関連
+    // --------------------------------
+    // API開始処理(クライアント別処理分岐)
+    socket_result = API_start(this_client, msg_buf, msg_len);
+
+    // APIの処理結果がエラー(!=0)だったら(切断処理をする)
+    if (socket_result != 0)
     {
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): API ERROR!? socket_result=%d\n", __func__, this_client->socket_fd, socket_result);
+        logging(LOGLEVEL_ERROR, log_str);
         // ----------------
         // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
         // ----------------
@@ -277,20 +367,7 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
         return;
     }
 
-    // --------------------------------
-    // API関連
-    // --------------------------------
-    // API開始処理(クライアント別処理分岐、スレッド生成など)
-    socket_result = API_start(this_client, msg_buf, msg_len);
-    // APIの処理結果がエラー(!=0)だったら(切断処理をする)
-    if (socket_result != 0)
-    {
-        // ----------------
-        // クライアント接続終了処理(イベントの停止、クライアントキューからの削除、SSL接続情報開放、ソケットクローズ、クライアント情報開放)
-        // ----------------
-        CLOSE_client(loop, (struct ev_io *)this_client, revents);
-        return;
-    }
+    return;
 }
 
 // --------------------------------
@@ -299,14 +376,13 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
 static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server_watcher, int revents)
 {
     int                             socket_result;
-    int                             nonblocking_flag = 1;               // ノンブロッキング対応(0:非対応、1:対応))
+    char                            log_str[MAX_LOG_LENGTH];
+
+    int                             nonblocking_flag = 0;                                       // ノンブロッキング設定(0:非対応、1:対応))
 
     struct sockaddr_in              client_sockaddr_in6;                                        // IPv6ソケットアドレス
     socklen_t                       client_sockaddr_len = sizeof(client_sockaddr_in6);          // IPv6ソケットアドレス構造体のサイズ (バイト単位)
     struct EVS_ev_client_t          *client_watcher;                                            // クライアント別設定用構造体ポインタ
-    struct EVS_timer_t              *timeout_watcher;                                           // タイマー別構造体ポインタ
-
-    char                            log_str[MAX_LOG_LENGTH];
 
     // ----------------
     // ソケットアクセプト(accept : リッスンポートに接続があった)
@@ -337,7 +413,7 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     if (server_watcher->ssl_support == 1)
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL port.\n", __func__, server_watcher->socket_fd);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         // ----------------
         // OpenSSL(SSL_new : SSL設定情報を元に、SSL接続情報を生成)
         // ----------------
@@ -351,7 +427,7 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
 
         // ----------------
         // OpenSSL(SSL_set_fd : 接続してきたソケットファイルディスクリプタを、SSL_set_fd()でSSL接続情報に紐づけ)
@@ -366,7 +442,7 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
 
         // SSLハンドシェイク前(=1)に設定
         client_watcher->ssl_status = 1;
@@ -375,42 +451,13 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     else
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Not SSL port.\n", __func__, server_watcher->socket_fd);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         // 非SSL通信(=0)に設定
         client_watcher->ssl_status = 0;
     }
 
-    // ----------------
-    // 無通信タイムアウトチェックをする(=1:有効)なら
-    // ----------------
-    if (EVS_config.nocommunication_check == 1)
-    {
-        // ----------------
-        // タイマー別構造体ポインタに、タイムアウト監視を設定する
-        // ----------------
-        // タイマー別構造体ポインタのメモリ領域を確保
-        timeout_watcher = (struct EVS_timer_t *)calloc(1, sizeof(*timeout_watcher));
-        // メモリ領域が確保できなかったら
-        if (timeout_watcher == NULL)
-        {
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
-            logging(LOGLEVEL_ERROR, log_str);
-            free(client_watcher);
-            return;
-        }
-
-        // タイマー別構造体ポインタにクライアント別設定用構造体ポインタを設定
-        timeout_watcher->timeout = EVS_config.nocommunication_timeout;      // タイムアウト秒(last_activityのtimeout秒後)を設定する
-        timeout_watcher->client_target = (void *)client_watcher;            // クライアント別設定用構造体ポインタを設定する
-        ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
-        client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
-        client_watcher->timeout_target = (void *)timeout_watcher;           // クライアント接続を切断するときに、該当接続のタイマーオブジェクトを削除するために設定しておく
-
-        // テールキューの最後にこの接続の情報を追加する
-        TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
-        snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
-        logging(LOGLEVEL_INFO, log_str);
-    }
+    // クライアント毎の接続状態を0:accept直後に設定
+    client_watcher->request_status = 0;
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
     client_watcher->socket_fd = socket_result;                                                                      // ディスクリプタを設定する
@@ -423,23 +470,33 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
-    // クライアントとの接続ソケットをノンブロッキングモードにする
+    // クライアントとの接続ソケットのノンブロッキングモードをnonblocking_flagに設定する
     // ----------------
     socket_result = ioctl(client_watcher->socket_fd, FIONBIO, &nonblocking_flag);
-    // ノンブロッキングモードにできなかったら
+    // 設定ができなかったら
     if (socket_result < 0)
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
         logging(LOGLEVEL_ERROR, log_str);
         free(client_watcher);
-        free(timeout_watcher);
         return;
+    }
+
+    // ----------------
+    // 無通信タイムアウトチェックをする(=1:有効)なら
+    // ----------------
+    if (EVS_config.nocommunication_check == 1)
+    {
+        ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
+        client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった日時)を設定する
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): last_activity=%.0f\n", __func__, client_watcher->socket_fd, client_watcher->last_activity);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
 
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_client_tailq, client_watcher, entries);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // クライアント別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
@@ -447,9 +504,9 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
     ev_io_init(&client_watcher->io_watcher, CB_recv, client_watcher->socket_fd, EV_READ);
     ev_io_start(loop, &client_watcher->io_watcher);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 }
 
 // --------------------------------
@@ -458,14 +515,13 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
 static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server_watcher, int revents)
 {
     int                             socket_result;
-    int                             nonblocking_flag = 1;               // ノンブロッキング対応(0:非対応、1:対応))
+    char                            log_str[MAX_LOG_LENGTH];
+
+    int                             nonblocking_flag = 0;                                   // ノンブロッキング設定(0:非対応、1:対応))
 
     struct sockaddr_in              client_sockaddr_in;                                     // IPv4ソケットアドレス
     socklen_t                       client_sockaddr_len = sizeof(client_sockaddr_in);       // IPv4ソケットアドレス構造体のサイズ (バイト単位)
     struct EVS_ev_client_t          *client_watcher;                                        // クライアント別設定用構造体ポインタ
-    struct EVS_timer_t              *timeout_watcher;                                       // タイマー別構造体ポインタ
-
-    char                            log_str[MAX_LOG_LENGTH];
 
     // ----------------
     // ソケットアクセプト(accept : リッスンポートに接続があった)
@@ -496,7 +552,7 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     if (server_watcher->ssl_support == 1)
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL port.\n", __func__, server_watcher->socket_fd);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         // ----------------
         // OpenSSL(SSL_new : SSL設定情報を元に、SSL接続情報を生成)
         // ----------------
@@ -510,7 +566,7 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_new(): OK.\n", __func__, server_watcher->socket_fd);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
 
         // ----------------
         // OpenSSL(SSL_set_fd : 接続してきたソケットファイルディスクリプタを、SSL_set_fd()でSSL接続情報に紐づけ)
@@ -525,7 +581,7 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
             return;
         }
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): SSL_set_fd(client fd=%d): OK.\n", __func__, server_watcher->socket_fd, socket_result);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
 
         // SSLハンドシェイク前(=1)に設定
         client_watcher->ssl_status = 1;
@@ -534,42 +590,13 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     else
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): Not SSL port.\n", __func__, server_watcher->socket_fd);
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         // 非SSL通信(=0)に設定
         client_watcher->ssl_status = 0;
     }
 
-    // ----------------
-    // 無通信タイムアウトチェックをする(=1:有効)なら
-    // ----------------
-    if (EVS_config.nocommunication_check == 1)
-    {
-        // ----------------
-        // タイマー別構造体ポインタに、タイムアウト監視を設定する
-        // ----------------
-        // タイマー別構造体ポインタのメモリ領域を確保
-        timeout_watcher = (struct EVS_timer_t *)calloc(1, sizeof(*timeout_watcher));
-        // メモリ領域が確保できなかったら
-        if (timeout_watcher == NULL)
-        {
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
-            logging(LOGLEVEL_ERROR, log_str);
-            free(client_watcher);
-            return;
-        }
-
-        // タイマー別構造体ポインタにクライアント別設定用構造体ポインタを設定
-        timeout_watcher->timeout = EVS_config.nocommunication_timeout;      // タイムアウト秒(last_activityのtimeout秒後)を設定する
-        timeout_watcher->client_target = (void *)client_watcher;            // クライアント別設定用構造体ポインタを設定する
-        ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
-        client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
-        client_watcher->timeout_target = (void *)timeout_watcher;           // クライアント接続を切断するときに、該当接続のタイマーオブジェクトを削除するために設定しておく
-
-        // テールキューの最後にこの接続の情報を追加する
-        TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
-        snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
-        logging(LOGLEVEL_INFO, log_str);
-    }
+    // クライアント毎の接続状態を0:accept直後に設定
+    client_watcher->request_status = 0;
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
     client_watcher->socket_fd = socket_result;                                                                      // ディスクリプタを設定する
@@ -582,23 +609,33 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     logging(LOGLEVEL_INFO, log_str);
 
     // ----------------
-    // クライアントとの接続ソケットをノンブロッキングモードにする
+    // クライアントとの接続ソケットのノンブロッキングモードをnonblocking_flagに設定する
     // ----------------
     socket_result = ioctl(client_watcher->socket_fd, FIONBIO, &nonblocking_flag);
-    // ノンブロッキングモードにできなかったら
+    // 設定ができなかったら
     if (socket_result < 0)
     {
         snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): ioctl(): Cannot set Non-Blocking mode!? errno=%d (%s)\n", __func__, client_watcher->socket_fd, errno, strerror(errno));
         logging(LOGLEVEL_ERROR, log_str);
         free(client_watcher);
-        free(timeout_watcher);
         return;
+    }
+
+    // ----------------
+    // 無通信タイムアウトチェックをする(=1:有効)なら
+    // ----------------
+    if (EVS_config.nocommunication_check == 1)
+    {
+        ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
+        client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった日時)を設定する
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): last_activity=%.0f\n", __func__, client_watcher->socket_fd, client_watcher->last_activity);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
 
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_client_tailq, client_watcher, entries);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // クライアント別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
@@ -606,9 +643,9 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
     ev_io_init(&client_watcher->io_watcher, CB_recv, client_watcher->socket_fd, EV_READ);
     ev_io_start(loop, &client_watcher->io_watcher);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 }
 
 // --------------------------------
@@ -617,13 +654,11 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
 static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server_watcher, int revents)
 {
     int                             socket_result;
+    char                            log_str[MAX_LOG_LENGTH];
 
     struct sockaddr_un              client_sockaddr_un;                                     // UNIXドメインソケットアドレス
     socklen_t                       client_sockaddr_len = sizeof(client_sockaddr_un);       // UNIXドメインソケットアドレス構造体のサイズ (バイト単位)
     struct EVS_ev_client_t          *client_watcher;                                        // クライアント別設定用構造体ポインタ
-    struct EVS_timer_t              *timeout_watcher;                                       // タイマー別構造体ポインタ
-
-    char                            log_str[MAX_LOG_LENGTH];
 
     // ----------------
     // ソケットアクセプト(accept : リッスンポートに接続があった)
@@ -650,37 +685,8 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
         return;
     }
 
-    // ----------------
-    // 無通信タイムアウトチェックをする(=1:有効)なら
-    // ----------------
-    if (EVS_config.nocommunication_check == 1)
-    {
-        // ----------------
-        // タイマー別構造体ポインタに、タイムアウト監視を設定する
-        // ----------------
-        // タイマー別構造体ポインタのメモリ領域を確保
-        timeout_watcher = (struct EVS_timer_t *)calloc(1, sizeof(*timeout_watcher));
-        // メモリ領域が確保できなかったら
-        if (timeout_watcher == NULL)
-        {
-            snprintf(log_str, MAX_LOG_LENGTH, "%s(): Cannot calloc memory? errno=%d (%s)\n", __func__, errno, strerror(errno));
-            logging(LOGLEVEL_ERROR, log_str);
-            free(client_watcher);
-            return;
-        }
-
-        // タイマー別構造体ポインタにクライアント別設定用構造体ポインタを設定
-        timeout_watcher->timeout = EVS_config.nocommunication_timeout;      // タイムアウト秒(last_activityのtimeout秒後)を設定する
-        timeout_watcher->client_target = (void *)client_watcher;            // クライアント別設定用構造体ポインタを設定する
-        ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
-        client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
-        client_watcher->timeout_target = (void *)timeout_watcher;           // クライアント接続を切断するときに、該当接続のタイマーオブジェクトを削除するために設定しておく
-
-        // テールキューの最後にこの接続の情報を追加する
-        TAILQ_INSERT_TAIL(&EVS_timer_tailq, timeout_watcher, entries);
-        snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(timeout_watcher): OK.\n", __func__);
-        logging(LOGLEVEL_INFO, log_str);
-    }
+    // クライアント毎の接続状態を0:accept直後に設定
+    client_watcher->request_status = 0;
 
     // クライアント別設定用構造体ポインタにアクセプトしたソケットの情報を設定
     client_watcher->socket_fd = socket_result;                                                                  // ディスクリプタを設定する
@@ -691,10 +697,21 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): inet_ntop(PF_UNIX): Client address=%s\n", __func__, client_watcher->addr_str);
     logging(LOGLEVEL_INFO, log_str);
 
+    // ----------------
+    // 無通信タイムアウトチェックをする(=1:有効)なら
+    // ----------------
+    if (EVS_config.nocommunication_check == 1)
+    {
+        ev_now_update(loop);                                                // イベントループの日時を現在の日時に更新
+        client_watcher->last_activity = ev_now(loop);                       // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)を設定する
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(fd=%d): last_activity=%.0f\n", __func__, client_watcher->socket_fd, client_watcher->last_activity);
+        logging(LOGLEVEL_DEBUG, log_str);
+    }
+
     // テールキューの最後にこの接続の情報を追加する
     TAILQ_INSERT_TAIL(&EVS_client_tailq, client_watcher, entries);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): TAILQ_INSERT_TAIL(client fd=%d): OK.\n", __func__, client_watcher->socket_fd);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // クライアント別設定用構造体ポインタのI/O監視オブジェクトに対して、コールバック処理とソケットファイルディスクリプタ、そしてイベントのタイプを設定する
@@ -702,9 +719,9 @@ static void CB_accept_unix(struct ev_loop* loop, struct EVS_ev_server_t * server
     ev_io_init(&client_watcher->io_watcher, CB_recv, client_watcher->socket_fd, EV_READ);
     ev_io_start(loop, &client_watcher->io_watcher);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_init(CB_recv, client fd=%d, EV_READ): OK.\n", __func__, client_watcher->socket_fd);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_io_start(): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 }
 
 // --------------------------------
@@ -723,6 +740,14 @@ static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
         return;
     }
 
+    // ----------------
+    // アイドルイベント開始処理
+    // ----------------
+    // ev_idle_start()自体は、accept()とrecv()系イベントで呼び出す
+    ev_idle_start(loop, &idle_socket_watcher);
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): ev_signal_start(idle_socket_watcher): OK.\n", __func__);
+    logging(LOGLEVEL_DEBUG, log_str);
+
     // --------------------------------
     // プロトコルファミリー別に各種初期化処理
     // --------------------------------
@@ -733,7 +758,7 @@ static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // UNIXドメインソケットの初期化
         // ----------------
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): CB_accept_unix(): Go!\n", __func__);              // 呼ぶ前にログを出力
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         CB_accept_unix(loop, server_watcher, revents);                          // UNIXドメインソケットのアクセプト処理
     }
     // 該当ソケットのプロトコルファミリーがPF_INET(=IPv4でのアクセス)なら
@@ -743,7 +768,7 @@ static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // IPv4ソケットの初期化
         // ----------------
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): CB_accept_ipv4(): Go!\n", __func__);              // 呼ぶ前にログを出力
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         CB_accept_ipv4(loop, server_watcher, revents);                          // IPv4ソケットのアクセプト処理
     } 
     // 該当ソケットのプロトコルファミリーがPF_INET6(=IPv6でのアクセス)なら
@@ -753,7 +778,7 @@ static void CB_accept(struct ev_loop* loop, struct ev_io *watcher, int revents)
         // IPv6ソケットの初期化
         // ----------------
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): CB_accept_ipv6(): Go!\n", __func__);              // 呼ぶ前にログを出力
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
         CB_accept_ipv6(loop, server_watcher, revents);                          // IPv6ソケットのアクセプト処理
     }
     else
