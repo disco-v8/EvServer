@@ -1,7 +1,7 @@
 // ----------------------------------------------------------------------
 // EvServer - Libev Server (Sample) -
 // Purpose:
-//     Various initialization processing.
+//     Read from config file & set to variable.
 //
 // Program:
 //     Takeshi Kaburagi/MyDNS.JP    disco-v8@4x4.jp
@@ -21,6 +21,10 @@
 // --------------------------------
 
 // --------------------------------
+// 定数宣言
+// --------------------------------
+
+// --------------------------------
 // 型宣言
 // --------------------------------
 
@@ -36,10 +40,11 @@
 // --------------------------------
 char *config_str_cleaner(char *target, int target_len)
 {
+    char                            log_str[MAX_LOG_LENGTH];
+
     char                            *src_pos;                           // 元の文字列のポインタ
     char                            *temp_pos;                          // 大文字変換作業用文字列のポインタ
     char                            *dest_pos;                          // 大文字変換後の文字列のポインタ
-    char                            log_str[MAX_LOG_LENGTH];
 
     // 大文字変換用文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
     dest_pos = (char *)calloc(1, target_len + 1);
@@ -99,12 +104,13 @@ char *config_str_cleaner(char *target, int target_len)
 int config_str_convert(char *target, int target_len)
 {
     int                             init_result = 0;                    // 設定用文字列変換結果、初期値=0(正常終了)
+    char                            log_str[MAX_LOG_LENGTH];
+
     char                            *changed_str;                       // 整理後の文字列ポインタ
     char                            *key_str;                           // 設定値名文字列ポインタ
     char                            *value_str;                         // 設定値文字列ポインタ
     char                            value[3][MAX_STRING_LENGTH];        // 各設定値文字列
     struct EVS_port_t               *listen_port;                       // ポート別設定用構造体ポインタ
-    char                            log_str[MAX_LOG_LENGTH];
 
     // 設定値名文字列のメモリ領域を確保(+ 1バイトを忘れずに!!)
     key_str = (char *)calloc(1, target_len + 1);
@@ -231,6 +237,16 @@ int config_str_convert(char *target, int target_len)
         logging(LOGLEVEL_INFO, log_str);
     }
     // ----------------
+    // ログレベル設定なら
+    // ----------------
+    else if (strcmp("LOGLEVEL", key_str) == 0)
+    {
+        // ログレベルを設定(0:DEBUG, 1:INFO, 2:WARN, 3:ERROR)
+        EVS_config.log_level = atoi(value_str);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): log_level=%d\n", __func__, atoi(value_str));
+        logging(LOGLEVEL_DEBUG, log_str);
+    }
+    // ----------------
     // UNIXドメインソケットファイル設定なら
     // ----------------
     else if (strcmp("SOCKETFILE", key_str) == 0)
@@ -341,16 +357,6 @@ int config_str_convert(char *target, int target_len)
         logging(LOGLEVEL_INFO, log_str);
     }
     // ----------------
-    // タイムアウト確認間隔(秒)設定なら
-    // ----------------
-    else if (strcmp("TIMEOUT_CHECKINTERVAL", key_str) == 0)
-    {
-        // タイムアウト確認間隔(秒)を設定
-        EVS_config.timeout_checkintval = (ev_tstamp)atoi(value_str);
-        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timeout Check Interval=%f\n", __func__, (ev_tstamp)atoi(value_str));
-        logging(LOGLEVEL_INFO, log_str);
-    }
-    // ----------------
     // 無通信タイムアウトチェック(0:無効、1:有効)設定なら
     // ----------------
     else if (strcmp("NO_COMMUNICATION_CHECK", key_str) == 0)
@@ -361,14 +367,14 @@ int config_str_convert(char *target, int target_len)
             // 無通信タイムアウトチェックを1:ONに設定
             EVS_config.nocommunication_check = 1;
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): No-Communication Check=%d\n", __func__, EVS_config.nocommunication_check);
-            logging(LOGLEVEL_INFO, log_str);
+            logging(LOGLEVEL_DEBUG, log_str);
         }
         else
         {
             // 無通信タイムアウトチェックを0:OFFに設定
             EVS_config.nocommunication_check = 0;
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): No-Communication Check=%d\n", __func__, EVS_config.nocommunication_check);
-            logging(LOGLEVEL_INFO, log_str);
+            logging(LOGLEVEL_DEBUG, log_str);
         }
     }
     // ----------------
@@ -379,10 +385,20 @@ int config_str_convert(char *target, int target_len)
         // 無通信タイムアウト(秒)を設定
         EVS_config.nocommunication_timeout = (ev_tstamp)atoi(value_str);
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): No-Communication Timeout=%f\n", __func__, (ev_tstamp)atoi(value_str));
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
     // ----------------
-    // KeepAlive設定なら
+    // タイマーイベント確認間隔(秒)設定なら
+    // ----------------
+    else if (strcmp("TIMER_CHECKINTERVAL", key_str) == 0)
+    {
+        // タイマーイベント確認間隔(秒)を設定
+        EVS_config.timer_checkintval = (ev_tstamp)atoi(value_str);
+        snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timer Check Interval=%f\n", __func__, (ev_tstamp)atoi(value_str));
+        logging(LOGLEVEL_DEBUG, log_str);
+    }
+    // ----------------
+    // TCP KeepAlive設定なら
     // ----------------
     else if (strcmp("KEEPALIVE", key_str) == 0)
     {
@@ -392,45 +408,45 @@ int config_str_convert(char *target, int target_len)
             // KeepAliveを1:ONに設定
             EVS_config.keepalive = 1;
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): KeepAlive=%d\n", __func__, EVS_config.keepalive);
-            logging(LOGLEVEL_INFO, log_str);
+            logging(LOGLEVEL_DEBUG, log_str);
         }
         else
         {
             // KeepAliveを1:ONに設定
             EVS_config.keepalive = 0;
             snprintf(log_str, MAX_LOG_LENGTH, "%s(): KeepAlive=%d\n", __func__, EVS_config.keepalive);
-            logging(LOGLEVEL_INFO, log_str);
+            logging(LOGLEVEL_DEBUG, log_str);
         }
     }
     // ----------------
-    // KeepAlive IdleTime設定なら
+    // TCP KeepAlive IdleTime設定なら
     // ----------------
     else if (strcmp("KEEPALIVE_IDLETIME", key_str) == 0)
     {
         // Keepalive Idletimeを設定
         EVS_config.keepalive_idletime = atoi(value_str);
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): Keepalive IdleTime=%d\n", __func__, atoi(value_str));
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
     // ----------------
-    // KeepAlive Interval設定なら
+    // TCP KeepAlive Interval設定なら
     // ----------------
     else if (strcmp("KEEPALIVE_INTERVAL", key_str) == 0)
     {
         // Keepalive Intervalを設定
         EVS_config.keepalive_intval = atoi(value_str);
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): Keepalive Interval=%d\n", __func__, atoi(value_str));
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
     // ----------------
-    // KeepAlive Probes設定なら
+    // TCP KeepAlive Probes設定なら
     // ----------------
     else if (strcmp("KEEPALIVE_PROBES", key_str) == 0)
     {
         // Keepalive Probesを設定
         EVS_config.keepalive_probes = atoi(value_str);
         snprintf(log_str, MAX_LOG_LENGTH, "%s(): Keepalive Probes=%d\n", __func__, atoi(value_str));
-        logging(LOGLEVEL_INFO, log_str);
+        logging(LOGLEVEL_DEBUG, log_str);
     }
     // ----------------
     // 待ち受けポート設定なら
@@ -554,7 +570,7 @@ int INIT_config_default(void)
     // ----------------
     EVS_config.daemon = 1;
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): DAEMON=%d\n", __func__, EVS_config.daemon);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // PIDファイルを設定
@@ -572,7 +588,7 @@ int INIT_config_default(void)
     // PIDファイルを設定
     memcpy((void *)EVS_config.pid_file, (void *)pid_file, strlen(pid_file));
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): PidFile=%s\n", __func__, EVS_config.pid_file);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // ログファイルを設定
@@ -590,7 +606,14 @@ int INIT_config_default(void)
     // ログファイルを設定
     memcpy((void *)EVS_config.log_file, (void *)log_file, strlen(log_file));
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): LogFile=%s\n", __func__, EVS_config.log_file);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
+
+    // ----------------
+    // ログレベルを2:LOGLEVEL_INFOに設定
+    // ----------------
+    EVS_config.log_level = LOGLEVEL_INFO;
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Log Level=%d\n", __func__, EVS_config.log_level);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // UNIXドメインソケットファイルを設定
@@ -608,46 +631,46 @@ int INIT_config_default(void)
     // UNIXドメインソケットファイルを設定
     memcpy((void *)EVS_config.domain_socketfile, (void *)domain_socketfile, strlen(domain_socketfile));
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): SocketFile=%s\n", __func__, EVS_config.domain_socketfile);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // SSL/TLS対応を0:OFFに設定
     // ----------------
     EVS_config.ssl_support = 0;
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): SSL/TLS=%d\n", __func__, EVS_config.ssl_support);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
-    // タイムアウト確認間隔(秒)を60秒に設定
+    // タイマーイベント確認間隔(秒)を60秒に設定
     // ----------------
-    EVS_config.timeout_checkintval = 10.;
-    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timeout Check Interval=%f\n", __func__, EVS_config.timeout_checkintval);
-    logging(LOGLEVEL_INFO, log_str);
+    EVS_config.timer_checkintval = 60.;
+    snprintf(log_str, MAX_LOG_LENGTH, "%s(): Timeout Check Interval=%f\n", __func__, EVS_config.timer_checkintval);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // ----------------
     // KeepAliveを1:ONに設定
     // ----------------
     EVS_config.keepalive = 1;
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): KeepAlive=%d\n", __func__, EVS_config.keepalive);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // Keepalive Idletimeを設定
     EVS_config.keepalive_idletime = 180;
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): Keepalive IdleTime=%d\n", __func__, EVS_config.keepalive_idletime);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // Keepalive Intervalを設定
     EVS_config.keepalive_intval = 30;
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): Keepalive Interval=%d\n", __func__, EVS_config.keepalive_intval);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     // Keepalive Probesを設定
     EVS_config.keepalive_probes = 5;
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): Keepalive Probes=%d\n", __func__, EVS_config.keepalive_probes);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     snprintf(log_str, MAX_LOG_LENGTH, "%s(): OK.\n", __func__);
-    logging(LOGLEVEL_INFO, log_str);
+    logging(LOGLEVEL_DEBUG, log_str);
 
     return 0;
 }
