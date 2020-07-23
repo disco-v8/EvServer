@@ -1,7 +1,7 @@
 // ----------------------------------------------------------------------
 // EvServer - Libev Server (Sample) -
 // Version:
-//     0.0.1  First release
+//     Please show evs_main.c.
 //
 // Program:
 //     Takeshi Kaburagi/MyDNS.JP    disco-v8@4x4.jp
@@ -53,9 +53,12 @@
 #define MAX_STRING_LENGTH   1024                            // 設定ファイル中とかの、一行当たりの最大文字数
 #define MAX_LOG_LENGTH      512                             // ログの、一行当たりの最大文字数
 #define MAX_MESSAGE_LENGTH  8192                            // ソケット通信時の、一メッセージ当たりの最大文字数
+#define MAX_SIZE_16K       16384                            // 定数16KB
+#define MAX_SIZE_32K       32768                            // 定数32KB
+#define MAX_SIZE_64K       65536                            // 定数64KB
+#define MAX_SIZE_128K     131072                            // 定数128KB
 
 #define MAX_PF_NUM          16                              // 対応するプロトコルファミリーの最大数(PF_KEYまで…実際にはPF_UNIX、PF_INET、PF_INET6しか扱わない)
-
 
 enum                        loglevel {                      // ログレベル
                                 LOGLEVEL_DEBUG,
@@ -72,6 +75,7 @@ struct EVS_config_t {                                       // 各種設定用�
 
     char    *pid_file;                                      // PIDファイル名のフルパス
     char    *log_file;                                      // ログファイル名のフルパス
+    int     log_level;                                      // ログに出力するレベル(0:DEBUG, 1:INFO, 2:WARN, 3:ERROR)
 
     char    *domain_socketfile;                             // UNIXドメインソケットファイル名のフルパス
 
@@ -80,7 +84,8 @@ struct EVS_config_t {                                       // 各種設定用�
     char    *ssl_cert_file;                                 // サーバー証明書(PEM)CERTファイルのフルパス
     char    *ssl_key_file;                                  // サーバー証明書(PEM)KEYファイルのフルパス
 
-    ev_tstamp   timeout_checkintval;                        // タイムアウト確認間隔(秒)
+    ev_tstamp   timer_checkintval;                          // タイマーイベント確認間隔(秒)
+
     int         nocommunication_check;                      // 無通信タイムアウトチェック(0:無効、1:有効)
     ev_tstamp   nocommunication_timeout;                    // 無通信タイムアウト(秒)
     
@@ -113,9 +118,10 @@ struct EVS_ev_server_t {                                    // コールバッ�
 
 struct EVS_ev_client_t {                                    // コールバック関数内でソケットのファイルディスクリプタも知りたいので拡張した構造体を宣言する、こちらはクライアント用
     ev_io   io_watcher;                                     // libevのev_io、これをev_io_init()＆ev_io_start()に渡す
-    void    *timeout_target;                                // クライアント接続を切断するときに、該当接続のタイマーオブジェクトが知りたいので構造体の構成の一つとする
     ev_tstamp   last_activity;                              // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)
     int     socket_fd;                                      // socket_fd、コールバック関数内でstruct ev_io*で渡される変数のポインタをEVS_ev_client_t*に型変換することで参照する
+    int     request_status;                                 // クライアント毎の接続状態(0:accept直後、1:recvあり、など)
+    void    *request_buf;                                   // クライアント毎の付帯情報(HTTPのリクエストヘッダ)へのポインタ
     int     ssl_status;                                     // SSL接続状態(0:非SSL/SSL接続前、1:SSLハンドシェイク前、2:SSL接続中)
     SSL     *ssl;                                           // SSL接続情報
     union {                                                 // ソケットアドレス構造体の共用体
@@ -129,8 +135,8 @@ struct EVS_ev_client_t {                                    // コールバッ�
 };
 
 struct EVS_timer_t {                                        // タイマー別構造体
-    ev_tstamp   timeout;                                    // タイムアウト秒(last_activityのtimeout秒後)
-    void        *client_target;                             // タイムアウト対象となるクライアント接続構造体のポインタ(そこのlast_activityを見る)
+    ev_tstamp   timeout;                                    // タイムアウト秒(ev_now + タイムアウト時間)
+    void        *target;                                    // タイムアウトに必要な構造体のポインタ
     TAILQ_ENTRY (EVS_timer_t) entries;                      // 次のTAILQ構造体への接続 → man3/queue.3.html
 };
 
@@ -145,6 +151,7 @@ extern struct EVS_config_t              EVS_config;                     // シ�
 // ----------------
 // libev 関連
 // ----------------
+extern ev_idle                          idle_socket_watcher;            // アイドルオブジェクト(なにもイベントがないときに呼ばれる、監視対象イベントごとに設定しないといけない)
 extern ev_io                            stdin_watcher;                  // I/O監視オブジェクト
 extern ev_timer                         timeout_watcher;                // タイマーオブジェクト
 extern ev_signal                        signal_watcher_sighup;          // シグナルオブジェクト(シグナルごとにウォッチャーを分けないといけない)
