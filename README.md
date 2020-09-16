@@ -10,11 +10,11 @@ Building
 
 EvServer depends on few things to get compiled...
 
-* [CentOS Linux] 7+
-* [GNU Make] 3.82+
-* [GNU Automake] 1.13+
-* [Libev] 4.15+
-* [OpenSSL] 1.0.2+
+* [CentOS Linux] 8+
+* [GNU Make] 4.2+
+* [GNU Automake] 1.16+
+* [Libev] 4.24+
+* [OpenSSL] 1.1.1+
 
 [CentOS Linux]: https://www.centos.org/
 [GNU Make]: https://www.gnu.org/software/make/
