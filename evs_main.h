@@ -130,7 +130,7 @@ struct EVS_ev_client_t {                                    // コールバッ�
     ev_tstamp       last_activity;                          // 最終アクティブ日時(監視対象が最後にアクティブとなった=タイマー更新した日時)
     int             socket_fd;                              // socket_fd、コールバック関数内でstruct ev_io*で渡される変数のポインタをEVS_ev_client_t*に型変換することで参照する
     int             client_status;                          // クライアント毎の状態(0:accept直後、1:ヘッダ受信中、2:コンテンツ受信中、など)
-    int             ssl_status;                             // SSL接続状態(0:非SSL/SSL接続前、1:SSLハンドシェイク前、2:SSL接続中)
+    int             ssl_status;                             // SSL接続状態(0:非SSL/SSL接続前、1:SSLハンドシェイク中、2:SSL接続中)
     SSL             *ssl;                                   // SSL接続情報
 /*
     union {                                                 // ソケットアドレス構造体の共用体
