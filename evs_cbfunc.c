@@ -303,7 +303,7 @@ static void CB_recv(struct ev_loop* loop, struct ev_io *watcher, int revents)
         }
     }
     // ----------------
-    // SSLハンドシェイク前なら
+    // SSLハンドシェイク中なら
     // ----------------
     else if (this_client->ssl_status == 1)
     {
@@ -516,7 +516,7 @@ static void CB_accept_ipv6(struct ev_loop* loop, struct EVS_ev_server_t * server
             logging(LOGLEVEL_DEBUG, log_str);
         }
 
-        // SSLハンドシェイク前(=1)に設定
+        // SSLハンドシェイク中(=1)に設定
         client_watcher->ssl_status = 1;
     }
     // 非SSL/TLSソケットなら
@@ -697,7 +697,7 @@ static void CB_accept_ipv4(struct ev_loop* loop, struct EVS_ev_server_t * server
             logging(LOGLEVEL_DEBUG, log_str);
         }
 
-        // SSLハンドシェイク前(=1)に設定
+        // SSLハンドシェイク中(=1)に設定
         client_watcher->ssl_status = 1;
     }
     // 非SSL/TLSソケットなら
