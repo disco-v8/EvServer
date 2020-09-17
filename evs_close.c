@@ -51,7 +51,7 @@ void CLOSE_client(struct ev_loop* loop, struct ev_io *watcher, int revents)
     // --------------------------------
     // 各種API関連
     // --------------------------------
-    // SSLハンドシェイク前、もしくはSSL接続中なら
+    // SSLハンドシェイク中、もしくはSSL接続中なら
     if (this_client->ssl_status != 0)
     {
         // ----------------
