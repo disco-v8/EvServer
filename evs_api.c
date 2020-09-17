@@ -77,7 +77,7 @@ int API_print(struct EVS_ev_client_t *this_client, char *msg_buf, ssize_t msg_le
         }
     }
     // ----------------
-    // SSLハンドシェイク前なら
+    // SSLハンドシェイク中なら
     // ----------------
     else if (this_client->ssl_status == 1)
     {
